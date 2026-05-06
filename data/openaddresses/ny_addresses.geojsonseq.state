@@ -1,0 +1,14 @@
+{
+  "last_release": "2026-04-15.0",
+  "last_run": "2026-05-06T09:27:25.787728+00:00",
+  "theme": "addresses",
+  "type": "address",
+  "bbox": {
+    "xmin": -79.7624,
+    "ymin": 40.4961,
+    "xmax": -71.8562,
+    "ymax": 45.0153
+  },
+  "backend": "geojsonseq",
+  "output": "C:\\Users\\johns\\Documents\\Projects\\cre-investor-discovery-mcp\\data\\openaddresses\\ny_addresses.geojsonseq"
+}

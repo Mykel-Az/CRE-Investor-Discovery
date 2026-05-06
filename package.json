@@ -1,0 +1,37 @@
+{
+  "name": "cre-investor-discovery-mcp",
+  "version": "1.0.0",
+  "description": "CRE Investor Discovery MCP Server — corridor + lot-size filter to verified owner contacts",
+  "type": "module",
+  "main": "dist/src/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "nodemon --exec \"npx tsx\" src/index.ts",
+    "start": "node dist/src/index.js",
+    "seed": "node dist/scripts/seed-smoke-tests.js",
+    "init-db": "node --env-file=.env --import tsx scripts/init-db.ts",
+    "download-sos": "node --env-file=.env --import tsx scripts/download-sos-data.ts",
+    "download-parcels": "node --env-file=.env --import tsx scripts/download-parcels.ts",
+    "load-parcels": "node --env-file=.env --import tsx scripts/load-parcels.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "express": "^4.18.2",
+    "fuzzball": "^2.1.3",
+    "node-cron": "^3.0.3",
+    "pg": "^8.13.1",
+    "redis": "^4.6.13",
+    "zod": "^3.22.4",
+    "zod-to-json-schema": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.11.0",
+    "@types/node-cron": "^3.0.11",
+    "@types/pg": "^8.11.6",
+    "nodemon": "^3.0.3",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.3.3"
+  }
+}
