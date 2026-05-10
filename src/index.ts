@@ -8,6 +8,7 @@ import { connectDatabase, pool } from './db/client.js';
 import { registerAllTools } from './tools/index.js';
 import { startBackgroundJobs } from './ingest/jobs.js';
 import { query } from './db/client.js';
+import { createContextMiddleware } from '@ctxprotocol/sdk';
 
 const app = express();
 app.use(cors({
@@ -39,9 +40,7 @@ app.get('/health', async (_req, res) => {
 // createContextMiddleware() is applied here when @ctxprotocol/sdk is available.
 // This line secures paid tool calls; free discovery (tools/list) passes through.
 // Uncomment when deploying to the Context Protocol marketplace:
-// import { createContextMiddleware } from '@ctxprotocol/sdk';
-// app.use('/mcp', createContextMiddleware());
-
+app.use('/mcp', createContextMiddleware());
 app.post('/mcp', async (req, res) => {
   const server = new McpServer({
     name:    'cre-investor-discovery-mcp',

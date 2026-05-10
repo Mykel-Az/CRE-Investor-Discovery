@@ -41,20 +41,20 @@ export const InvestorDiscoveryInput = z.object({
   corridor: z
     .string()
     .default('Highway 9, NJ')
-    .describe('Road corridor and state, e.g. "Highway 9, NJ". Examples: "Route 1, NJ", "Route 22, NJ", "NJ Turnpike, NJ"'),
+    .describe('Road corridor and state, e.g. "Highway 9, NJ" or "Route 1, NJ". Examples: "Highway 9, NJ", "Route 1, NJ", "Route 35, NJ", "US-1, NJ"'),
   property_type: z
     .string()
     .default('Retail')
-    .describe('CRE property type. Examples: Retail, Office, Industrial, Multifamily, Mixed-Use, Land'),
+    .describe('CRE property type. Examples: "Retail", "Office", "Industrial", "Multifamily", "Mixed-Use", "Land"'),
   lot_size_min_acres: z
     .number()
     .optional()
     .default(0)
-    .describe('Minimum lot size in acres. Examples: 0, 0.5, 1, 2'),
+    .describe('Minimum lot size in acres (0 = no minimum). Examples: 0, 0.5, 1, 2'),
   lot_size_max_acres: z
     .number()
     .optional()
-    .describe('Maximum lot size in acres. Examples: 1, 5, 10'),
+    .describe('Maximum lot size in acres (omit for no maximum). Examples: 1, 2, 5, 10'),
   max_results: z
     .number()
     .min(1)
@@ -97,12 +97,12 @@ export const OwnerProfileInput = z.object({
   entity_id: z
     .string()
     .default('cre_smoke_smith_capital')
-    .describe('entity_id from investor_discovery response. Example: cre_smoke_smith_capital'),
+    .describe('entity_id from investor_discovery response. Examples: "cre_smoke_smith_capital"'),
   include_all_properties: z
     .boolean()
     .optional()
     .default(false)
-    .describe('If true, return full nationwide portfolio (may be large)'),
+    .describe('If true, return full nationwide portfolio. Examples: false, true'),
 });
 
 export const OwnerProfileOutput = z.object({
@@ -134,7 +134,7 @@ export const ParcelLookupInput = z.object({
   address: z
     .string()
     .default('1240 Highway 9, Woodbridge NJ')
-    .describe('Full street address of the commercial property'),
+    .describe('Full street address of the commercial property. Examples: "1240 Highway 9, Woodbridge NJ", "500 Route 1, Edison NJ", "123 Route 35, Middletown NJ"'),
 });
 
 export const ParcelLookupOutput = z.object({
