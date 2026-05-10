@@ -7,6 +7,7 @@ import { connectRedis, redis } from './cache/client.js';
 import { connectDatabase, pool } from './db/client.js';
 import { registerAllTools } from './tools/index.js';
 import { startBackgroundJobs } from './ingest/jobs.js';
+import { query } from './db/client.js';
 
 const app = express();
 app.use(cors({
@@ -18,8 +19,20 @@ app.options('*', cors());
 app.use(express.json());
 
 // ─── Health check ─────────────────────────────────────────────────────────
-app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', service: 'cre-investor-discovery-mcp', version: '1.0.0' });
+app.get('/health', async (_req, res) => {
+  try {
+    const dbResult = await query('SELECT 1');
+    const dbOk = dbResult.rows.length > 0;
+    res.json({
+      status: 'ok',
+      service: 'cre-investor-discovery-mcp',
+      version: '1.0.0',
+      db: dbOk ? 'connected' : 'error',
+      redis: 'connected',
+    });
+  } catch {
+    res.json({ status: 'ok', service: 'cre-investor-discovery-mcp', version: '1.0.0', db: 'error', redis: 'connected' });
+  }
 });
 
 // ─── MCP endpoint ─────────────────────────────────────────────────────────
