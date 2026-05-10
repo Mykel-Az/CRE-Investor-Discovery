@@ -9,7 +9,12 @@ import { registerAllTools } from './tools/index.js';
 import { startBackgroundJobs } from './ingest/jobs.js';
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Accept', 'Authorization'],
+}));
+app.options('*', cors());
 app.use(express.json());
 
 // ─── Health check ─────────────────────────────────────────────────────────
