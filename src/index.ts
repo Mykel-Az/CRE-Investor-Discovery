@@ -1,5 +1,6 @@
 // src/index.ts
 import express from 'express';
+import cors from 'cors';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { connectRedis, redis } from './cache/client.js';
@@ -8,6 +9,7 @@ import { registerAllTools } from './tools/index.js';
 import { startBackgroundJobs } from './ingest/jobs.js';
 
 const app = express();
+app.use(cors());
 app.use(express.json());
 
 // ─── Health check ─────────────────────────────────────────────────────────
