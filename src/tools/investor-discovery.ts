@@ -14,7 +14,7 @@ export function registerInvestorDiscovery(server: McpServer): void {
     'investor_discovery',
     {
       title:       'CRE Investor Discovery',
-      description: 'Filter commercial properties along a road corridor by property type and lot size, then return verified owner contacts in one call. Replaces the core Reonomy corridor-filter workflow at $0.10/query.',
+      description: 'Filter commercial properties along US road corridor by property type and lot size, then return verified owner contacts in one call. Replaces the core Reonomy corridor-filter workflow at $0.10/query.',
       inputSchema:  investorDiscoveryInputShape,
       outputSchema: InvestorDiscoveryOutput,
       _meta: {

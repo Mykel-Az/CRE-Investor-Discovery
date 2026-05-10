@@ -14,8 +14,7 @@ export function registerParcelLookup(server: McpServer): void {
     'parcel_lookup',
     {
       title:       'CRE Parcel Lookup',
-      description: 'Look up a single commercial property by street address. Returns parcel data, lot size, last sale, loan maturity, and the linked owner entity_id for use with owner_profile.',
-      inputSchema:  parcelLookupInputShape,
+      description: 'Look up a single commercial property by street address. Returns parcel data, lot size, last sale, loan maturity, and the linked owner entity_id for use with owner_profile.',      inputSchema:  parcelLookupInputShape,
       outputSchema: ParcelLookupOutput,
       _meta: {
         surface:       'both',

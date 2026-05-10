@@ -41,28 +41,29 @@ export const InvestorDiscoveryInput = z.object({
   corridor: z
     .string()
     .default('Highway 9, NJ')
-    .describe('Road corridor and state, e.g. "Highway 9, NJ" or "Route 1, CA"'),
+    .describe('Road corridor and state, e.g. "Highway 9, NJ". Examples: "Route 1, NJ", "Route 22, NJ", "NJ Turnpike, NJ"'),
   property_type: z
     .string()
     .default('Retail')
-    .describe('CRE property type: Retail, Office, Industrial, Multifamily, Mixed-Use, Land'),
+    .describe('CRE property type. Examples: Retail, Office, Industrial, Multifamily, Mixed-Use, Land'),
   lot_size_min_acres: z
     .number()
     .optional()
     .default(0)
-    .describe('Minimum lot size in acres (0 = no minimum)'),
+    .describe('Minimum lot size in acres. Examples: 0, 0.5, 1, 2'),
   lot_size_max_acres: z
     .number()
     .optional()
-    .describe('Maximum lot size in acres (omit for no maximum)'),
+    .describe('Maximum lot size in acres. Examples: 1, 5, 10'),
   max_results: z
     .number()
     .min(1)
     .max(50)
     .optional()
     .default(10)
-    .describe('Max owner records to return (1-50)'),
+    .describe('Max owner records to return (1-50). Examples: 5, 10, 25'),
 });
+
 
 export const InvestorDiscoveryOutput = z.object({
   status:        z.enum(['ok', 'empty', 'partial']),
