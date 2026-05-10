@@ -49,22 +49,22 @@ export async function resolveCorridorOwners(params: {
   const roadName  = corridorParts[0] ?? params.corridor;
   const roadState = corridorParts[1]?.toUpperCase() ?? '';
 
-  const supportedStates = ['NJ', 'NY'];
-  if (roadState && !supportedStates.includes(roadState)) {
-    return {
-      status: 'empty',
-      query_summary: {
-        corridor:           params.corridor,
-        property_type:      params.property_type,
-        lot_size_min_acres: params.lot_size_min_acres,
-        matched_parcels:    0,
-        unique_owners:      0,
-      },
-      owners:     [],
-      fallback:   false,
-      queried_at: new Date().toISOString(),
-    };
-  }
+  // const supportedStates = ['NJ', 'NY'];
+  // if (roadState && !supportedStates.includes(roadState)) {
+  //   return {
+  //     status: 'empty',
+  //     query_summary: {
+  //       corridor:           params.corridor,
+  //       property_type:      params.property_type,
+  //       lot_size_min_acres: params.lot_size_min_acres,
+  //       matched_parcels:    0,
+  //       unique_owners:      0,
+  //     },
+  //     owners:     [],
+  //     fallback:   false,
+  //     queried_at: new Date().toISOString(),
+  //   };
+  // }
 
   const searchRadius = parseInt(process.env.CORRIDOR_SEARCH_RADIUS_METERS ?? '400', 10);
 
