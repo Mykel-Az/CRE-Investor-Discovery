@@ -6,7 +6,7 @@
   "main": "dist/src/index.js",
   "scripts": {
     "build": "tsc",
-    "dev": "nodemon --exec \"npx tsx\" src/index.ts",
+    "dev": "nodemon --exec \"node --env-file=.env --import tsx\" src/index.ts",
     "start": "node dist/src/index.js",
     "seed": "node dist/scripts/seed-smoke-tests.js",
     "init-db": "node --env-file=.env --import tsx scripts/init-db.ts",

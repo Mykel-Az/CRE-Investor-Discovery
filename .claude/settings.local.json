@@ -3,7 +3,15 @@
     "allow": [
       "WebSearch",
       "Bash(npm run *)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(netstat -ano)",
+      "Bash(findstr \":3000\")",
+      "Bash(findstr \"LISTENING\")",
+      "Bash(Get-Process -Id 28528)",
+      "Bash(Select-Object Id, ProcessName, MainWindowTitle)",
+      "PowerShell(Get-Process -Id 28528)",
+      "PowerShell(Get-Process -Id 26420)",
+      "PowerShell(Get-NetTCPConnection -LocalPort 3000 -State Listen | Select-Object LocalAddress, LocalPort, OwningProcess | ForEach-Object { $_ | Add-Member -NotePropertyName ProcessName -NotePropertyValue \\(Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue\\).ProcessName -PassThru })"
     ]
   }
 }
