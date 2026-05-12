@@ -2,7 +2,7 @@ node_modules/
 dist/
 .env
 *.js.map
-data/**/*.csv
+# data/**/*.csv
 data/**/*.geojson
 data/**/*.geojsonseq
 data/**/*.json

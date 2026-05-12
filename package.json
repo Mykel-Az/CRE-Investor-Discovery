@@ -12,7 +12,8 @@
     "init-db": "node --env-file=.env --import tsx scripts/init-db.ts",
     "download-sos": "node --env-file=.env --import tsx scripts/download-sos-data.ts",
     "download-parcels": "node --env-file=.env --import tsx scripts/download-parcels.ts",
-    "load-parcels": "node --env-file=.env --import tsx scripts/load-parcels.ts"
+    "load-parcels": "node --env-file=.env --import tsx scripts/load-parcels.ts",
+    "load-roads": "node --env-file=.env --import tsx scripts/load-roads.ts"
   },
   "dependencies": {
     "@ctxprotocol/sdk": "^0.13.1",
