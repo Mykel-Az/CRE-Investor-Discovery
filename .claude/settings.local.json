@@ -11,7 +11,9 @@
       "Bash(Select-Object Id, ProcessName, MainWindowTitle)",
       "PowerShell(Get-Process -Id 28528)",
       "PowerShell(Get-Process -Id 26420)",
-      "PowerShell(Get-NetTCPConnection -LocalPort 3000 -State Listen | Select-Object LocalAddress, LocalPort, OwningProcess | ForEach-Object { $_ | Add-Member -NotePropertyName ProcessName -NotePropertyValue \\(Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue\\).ProcessName -PassThru })"
+      "PowerShell(Get-NetTCPConnection -LocalPort 3000 -State Listen | Select-Object LocalAddress, LocalPort, OwningProcess | ForEach-Object { $_ | Add-Member -NotePropertyName ProcessName -NotePropertyValue \\(Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue\\).ProcessName -PassThru })",
+      "Bash(curl -s --max-time 15 \"https://data.ny.gov/api/views/n9v6-gdp6/rows.csv?accessType=DOWNLOAD\")",
+      "Bash(curl -s --max-time 15 \"https://data.iowa.gov/api/views/ez5t-3qay/rows.csv?accessType=DOWNLOAD\")"
     ]
   }
 }

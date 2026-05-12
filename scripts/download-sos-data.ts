@@ -165,7 +165,7 @@ async function downloadState(config: StateConfig): Promise<void> {
   for await (const line of rl) {
     if (isFirstLine) {
       // Strip quotes from header names and lowercase for consistent access
-      srcHeaders = parseCSVLine(line).map(h => h.replace(/^"|"$/g, '').toLowerCase());
+      srcHeaders = parseCSVLine(line).map(h => h.replace(/^"|"$/g, '').toLowerCase().replace(/\s+/g, '_'));
       isFirstLine = false;
       continue;
     }
