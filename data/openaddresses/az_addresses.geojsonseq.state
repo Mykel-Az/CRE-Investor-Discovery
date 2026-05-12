@@ -1,0 +1,14 @@
+{
+  "last_release": "2026-04-15.0",
+  "last_run": "2026-05-12T15:07:55.784351+00:00",
+  "theme": "addresses",
+  "type": "address",
+  "bbox": {
+    "xmin": -114.8183,
+    "ymin": 31.3322,
+    "xmax": -109.0452,
+    "ymax": 37.0042
+  },
+  "backend": "geojsonseq",
+  "output": "C:\\Users\\johns\\Documents\\MCP\\CRE-Investor-Discovery\\data\\openaddresses\\az_addresses.geojsonseq"
+}
