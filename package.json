@@ -14,7 +14,9 @@
     "download-parcels": "node --env-file=.env --import tsx scripts/download-parcels.ts",
     "load-parcels": "node --env-file=.env --import tsx scripts/load-parcels.ts",
     "load-roads": "node --env-file=.env --import tsx scripts/load-roads.ts",
-    "enrich-owners": "node --env-file=.env --import tsx scripts/enrich-owners-attom.ts"
+    "resolve-entities": "node --env-file=.env --import tsx scripts/run-entity-resolution.ts",
+    "enrich-owners": "node --env-file=.env --import tsx scripts/enrich-owners-attom.ts",
+    "load-pluto": "node --env-file=.env --import tsx scripts/load-pluto.ts"
   },
   "dependencies": {
     "@ctxprotocol/sdk": "^0.13.1",

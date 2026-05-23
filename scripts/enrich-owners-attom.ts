@@ -104,7 +104,7 @@ console.log(`[attom] Target states: ${argState?.join(', ').toUpperCase() ?? 'all
 console.log(`[attom] Limit: ${argLimit} parcels\n`);
 
 const stateFilter = argState?.length
-  ? `AND UPPER(p.state) = ANY(ARRAY[${argState.map(s => `'${s.toUpperCase()}'`).join(',')}])`
+  ? `AND UPPER(state) = ANY(ARRAY[${argState.map(s => `'${s.toUpperCase()}'`).join(',')}])`
   : '';
 
 const client = await pool.connect();
