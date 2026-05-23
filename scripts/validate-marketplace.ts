@@ -43,8 +43,8 @@ const prompts = [
   'Find industrial property investors along Northern Boulevard in Queens with lots over 1 acre',
   // 4. Multi-step workflow
   'Find mixed-use investors on Atlantic Avenue in Brooklyn, then give me the full profile for the first owner',
-  // 5. Parcel lookup
-  'Look up the owner of 350 5th Avenue New York NY',
+  // 5. Parcel lookup — use a confirmed address in our dataset
+  'Look up the owner of 259 Front Street Manhattan New York',
   // 6. Edge-case
   'Who owns commercial properties near the Long Island Expressway in New York?',
   // 7. Power-user

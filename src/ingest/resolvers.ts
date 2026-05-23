@@ -419,7 +419,15 @@ export async function resolveOwnerProfile(params: {
 // ─── Layer 1: Single parcel by address ────────────────────────────────────
 
 export async function resolveParcel(address: string): Promise<ParcelResult> {
-  // Full-text search on address with fallback to ILIKE
+  // Normalize ordinal suffixes and common abbreviations for better FTS matching
+  const normalised = address
+    .replace(/\b(\d+)(st|nd|rd|th)\b/gi, '$1')   // 5th → 5, 3rd → 3
+    .replace(/\bAvenue\b/gi, 'Ave')
+    .replace(/\bStreet\b/gi, 'St')
+    .replace(/\bBoulevard\b/gi, 'Blvd')
+    .replace(/\bDrive\b/gi, 'Dr')
+    .replace(/\bRoad\b/gi, 'Rd');
+
   const result = await query(
     `SELECT
        p.parcel_id, p.address, p.city, p.state, p.zip,
@@ -436,9 +444,11 @@ export async function resolveParcel(address: string): Promise<ParcelResult> {
      WHERE to_tsvector('english', p.address || ' ' || p.city || ' ' || p.state || ' ' || p.zip)
            @@ plainto_tsquery('english', $1)
         OR UPPER(p.address || ' ' || p.city || ' ' || p.state) LIKE UPPER($2)
-     ORDER BY pe.confidence DESC NULLS LAST
+        OR similarity(UPPER(p.address || ' ' || p.city || ' ' || COALESCE(p.state,'')), UPPER($3)) > 0.4
+     ORDER BY similarity(UPPER(p.address || ' ' || p.city || ' ' || COALESCE(p.state,'')), UPPER($3)) DESC,
+              pe.confidence DESC NULLS LAST
      LIMIT 5`,
-    [address, `%${address.replace(/\s+/g, '%')}%`]
+    [normalised, `%${normalised.replace(/\s+/g, '%')}%`, address]
   );
 
   if (result.rows.length === 0) {
@@ -453,17 +463,20 @@ export async function resolveParcel(address: string): Promise<ParcelResult> {
   }
 
   if (result.rows.length > 1) {
-    // Check if multiple distinct parcels matched — ambiguous
-    const uniqueParcels = new Set(result.rows.map((r: Record<string, unknown>) => r.parcel_id));
-    if (uniqueParcels.size > 1) {
-      return {
-        status:         'ambiguous',
-        parcel:         null,
-        owner_name:     null,
-        entity_id:      null,
-        data_freshness: 'fresh',
-        freshness_secs: 0,
-      };
+    // Only ambiguous if distinct parcels at different locations (not same building/lot splits)
+    const uniqueAddresses = new Set(
+      result.rows.map((r: Record<string, unknown>) => `${r.address as string}|${r.city as string}|${r.state as string}`)
+    );
+    if (uniqueAddresses.size > 1) {
+      // Multiple distinct locations — prefer rows with a linked entity
+      const withEntity = result.rows.filter((r: Record<string, unknown>) => r.entity_id);
+      if (withEntity.length === 0) {
+        // Take the best similarity match (first row, already ordered)
+        // rather than returning ambiguous — gives the user something useful
+      } else {
+        // Use the first entity-linked parcel
+        result.rows.splice(0, result.rows.length, withEntity[0]);
+      }
     }
   }
 
