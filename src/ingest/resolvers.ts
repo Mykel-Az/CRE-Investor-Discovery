@@ -35,6 +35,19 @@ function freshness(updatedAt: Date | string | null): 'fresh' | 'stale' {
   return secsSince(updatedAt) > STALE_THRESHOLD ? 'stale' : 'fresh';
 }
 
+const STATE_ABBREV: Record<string, string> = {
+  'ALABAMA':'AL','ALASKA':'AK','ARIZONA':'AZ','ARKANSAS':'AR','CALIFORNIA':'CA',
+  'COLORADO':'CO','CONNECTICUT':'CT','DELAWARE':'DE','FLORIDA':'FL','GEORGIA':'GA',
+  'HAWAII':'HI','IDAHO':'ID','ILLINOIS':'IL','INDIANA':'IN','IOWA':'IA',
+  'KANSAS':'KS','KENTUCKY':'KY','LOUISIANA':'LA','MAINE':'ME','MARYLAND':'MD',
+  'MASSACHUSETTS':'MA','MICHIGAN':'MI','MINNESOTA':'MN','MISSISSIPPI':'MS','MISSOURI':'MO',
+  'MONTANA':'MT','NEBRASKA':'NE','NEVADA':'NV','NEW HAMPSHIRE':'NH','NEW JERSEY':'NJ',
+  'NEW MEXICO':'NM','NEW YORK':'NY','NORTH CAROLINA':'NC','NORTH DAKOTA':'ND','OHIO':'OH',
+  'OKLAHOMA':'OK','OREGON':'OR','PENNSYLVANIA':'PA','RHODE ISLAND':'RI','SOUTH CAROLINA':'SC',
+  'SOUTH DAKOTA':'SD','TENNESSEE':'TN','TEXAS':'TX','UTAH':'UT','VERMONT':'VT',
+  'VIRGINIA':'VA','WASHINGTON':'WA','WEST VIRGINIA':'WV','WISCONSIN':'WI','WYOMING':'WY',
+};
+
 // ─── Layer 1 + 2 + 3 + 4: Full corridor discovery ─────────────────────────
 
 export async function resolveCorridorOwners(params: {
@@ -47,7 +60,8 @@ export async function resolveCorridorOwners(params: {
   // Step 1: Spatial query — find parcels within 400m of the named road corridor
   const corridorParts = params.corridor.split(',').map((s) => s.trim());
   const roadName  = corridorParts[0] ?? params.corridor;
-  const roadState = corridorParts[1]?.toUpperCase() ?? '';
+  const rawState  = corridorParts[1]?.toUpperCase().trim() ?? '';
+  const roadState = STATE_ABBREV[rawState] ?? rawState;
 
   const searchRadius = parseInt(process.env.CORRIDOR_SEARCH_RADIUS_METERS ?? '400', 10);
 

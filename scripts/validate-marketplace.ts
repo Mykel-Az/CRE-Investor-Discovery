@@ -86,6 +86,7 @@ for (let i = 0; i < prompts.length; i++) {
   console.log(`[${i + 1}/${prompts.length}] "${prompt.slice(0, 70)}..."`);
 
   try {
+    // @ts-ignore — queryDepth is in the live API but not yet in the TS type
     const answer = await client.query.run({
       query:                prompt,
       tools:                [TOOL_ID],
@@ -94,12 +95,13 @@ for (let i = 0; i < prompts.length; i++) {
       includeDeveloperTrace: true,
     });
 
-    const text          = answer?.result?.text ?? answer?.text ?? '';
-    const cost          = answer?.result?.cost?.totalCostUsd ?? answer?.cost?.totalCostUsd;
-    const duration      = answer?.result?.durationMs ?? answer?.durationMs;
-    const toolsUsed     = answer?.result?.toolsUsed ?? answer?.toolsUsed ?? [];
-    const trace         = answer?.result?.developerTrace ?? answer?.developerTrace ?? {};
-    const retryCount    = trace?.retryCount ?? 0;
+    // QueryBaseResult fields (correct SDK paths)
+    const text       = (answer as any)?.response ?? '';
+    const cost       = (answer as any)?.cost?.totalCostUsd;
+    const duration   = (answer as any)?.durationMs;
+    const toolsUsed  = (answer as any)?.toolsUsed ?? [];
+    const trace      = (answer as any)?.developerTrace ?? {};
+    const retryCount = trace?.retryCount ?? 0;
 
     // 4.3.1 Deterministic failure gate
     const autoFail = text ? checkDeterministicFail(text) : 'empty response';
