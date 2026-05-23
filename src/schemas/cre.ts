@@ -96,8 +96,7 @@ export const InvestorDiscoveryOutput = z.object({
 export const OwnerProfileInput = z.object({
   entity_id: z
     .string()
-    .default('cre_smoke_smith_capital')
-    .describe('entity_id from investor_discovery response. Examples: "cre_smoke_smith_capital"'),
+    .describe('entity_id from investor_discovery response. Examples: "sos_ny_139857", "sos_ny_2687798", "sos_ia_12345"'),
   include_all_properties: z
     .boolean()
     .optional()
