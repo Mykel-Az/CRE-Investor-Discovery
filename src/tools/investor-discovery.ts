@@ -9,6 +9,27 @@ import { getCached, setCache } from '../cache/helpers.js';
 import { resolveCorridorOwners } from '../ingest/resolvers.js';
 import { structuredError } from '../errors/codes.js';
 
+function formatDiscovery(r: any): string {
+  if (!r || !r.owners) return 'No results found.';
+  const { query_summary: q, owners } = r;
+  if (!owners.length) return `No ${q?.property_type ?? 'commercial'} property owners found along ${q?.corridor ?? 'the corridor'}.`;
+  const lines: string[] = [
+    `Found ${owners.length} ${q?.property_type ?? ''} property owner(s) along ${q?.corridor ?? 'the corridor'} (${q?.matched_parcels ?? 0} parcels matched).`,
+  ];
+  for (const o of owners.slice(0, 10)) {
+    const props = o.properties_in_corridor ?? [];
+    const portCount = o.portfolio_summary?.property_count ?? props.length;
+    const contact = o.contact ? ` | Contact: ${o.contact.name}${o.contact.email ? ` <${o.contact.email}>` : ''}${o.contact.phone ? ` ${o.contact.phone}` : ''}` : '';
+    lines.push(`• ${o.owner_name} (${o.entity_type}, ${o.entity_id}) — ${props.length} propert${props.length === 1 ? 'y' : 'ies'} in corridor, ${portCount} total in portfolio${contact}`);
+    for (const p of props.slice(0, 3)) {
+      const size = p.lot_size_acres ? ` | ${p.lot_size_acres.toFixed(2)} ac` : '';
+      const sqft = p.building_sqft ? ` | ${p.building_sqft.toLocaleString()} sqft` : '';
+      lines.push(`  - ${p.address}, ${p.city}, ${p.state} ${p.zip}${size}${sqft}`);
+    }
+  }
+  return lines.join('\n');
+}
+
 export function registerInvestorDiscovery(server: McpServer): void {
   server.registerTool(
     'investor_discovery',
@@ -53,7 +74,7 @@ export function registerInvestorDiscovery(server: McpServer): void {
       const cached = await getCached<Record<string, unknown>>(cacheKey);
       if (cached) {
         return {
-          content:           [{ type: 'text', text: JSON.stringify(cached) }],
+          content:           [{ type: 'text', text: formatDiscovery(cached as any) }],
           structuredContent: cached,
         };
       }
@@ -79,7 +100,7 @@ export function registerInvestorDiscovery(server: McpServer): void {
 
       const payload = result as unknown as Record<string, unknown>;
       return {
-        content:           [{ type: 'text', text: JSON.stringify(result) }],
+        content:           [{ type: 'text', text: formatDiscovery(result as any) }],
         structuredContent: payload,
       };
     }

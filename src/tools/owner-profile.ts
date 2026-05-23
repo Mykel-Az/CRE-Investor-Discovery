@@ -9,6 +9,37 @@ import { getCached, setCache } from '../cache/helpers.js';
 import { resolveOwnerProfile } from '../ingest/resolvers.js';
 import { structuredError } from '../errors/codes.js';
 
+function formatProfile(r: any): string {
+  if (!r) return 'Owner profile not found.';
+  const lines: string[] = [
+    `${r.canonical_name} (${r.entity_type}, ${r.entity_id})`,
+    `Status: ${r.status} | Jurisdiction: ${r.jurisdiction}${r.incorporated_at ? ` | Incorporated: ${r.incorporated_at}` : ''}`,
+  ];
+  if (r.beneficial_owners?.length) {
+    lines.push(`Beneficial owners: ${r.beneficial_owners.map((b: any) => `${b.name} (${b.role}${b.ownership_pct != null ? `, ${b.ownership_pct}%` : ''})`).join('; ')}`);
+  }
+  if (r.registered_agent) {
+    lines.push(`Registered agent: ${r.registered_agent.name} — ${r.registered_agent.address}`);
+  }
+  const ps = r.portfolio_summary;
+  if (ps) {
+    lines.push(`Portfolio: ${ps.property_count} propert${ps.property_count === 1 ? 'y' : 'ies'}${ps.total_sqft ? ` | ${ps.total_sqft.toLocaleString()} sqft total` : ''} | States: ${(ps.states_present ?? []).join(', ')} | Types: ${(ps.property_types ?? []).join(', ')}`);
+  }
+  if (r.contact) {
+    lines.push(`Contact: ${r.contact.name} (${r.contact.role})${r.contact.email ? ` | ${r.contact.email}` : ''}${r.contact.phone ? ` | ${r.contact.phone}` : ''}`);
+  }
+  const props = r.properties ?? [];
+  if (props.length) {
+    lines.push(`\nProperties (${props.length} shown):`);
+    for (const p of props.slice(0, 5)) {
+      const size = p.lot_size_acres ? ` | ${p.lot_size_acres.toFixed(2)} ac` : '';
+      lines.push(`  • ${p.address}, ${p.city}, ${p.state} — ${p.property_type}${size}`);
+    }
+    if (props.length > 5) lines.push(`  … and ${props.length - 5} more`);
+  }
+  return lines.join('\n');
+}
+
 export function registerOwnerProfile(server: McpServer): void {
   server.registerTool(
     'owner_profile',
@@ -46,7 +77,7 @@ export function registerOwnerProfile(server: McpServer): void {
       const cached = await getCached<Record<string, unknown>>(cacheKey);
       if (cached) {
         return {
-          content:           [{ type: 'text', text: JSON.stringify(cached) }],
+          content:           [{ type: 'text', text: formatProfile(cached as any) }],
           structuredContent: cached,
         };
       }
@@ -72,7 +103,7 @@ export function registerOwnerProfile(server: McpServer): void {
 
       const payload = result as unknown as Record<string, unknown>;
       return {
-        content:           [{ type: 'text', text: JSON.stringify(result) }],
+        content:           [{ type: 'text', text: formatProfile(result as any) }],
         structuredContent: payload,
       };
     }

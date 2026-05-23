@@ -41,7 +41,7 @@ export const InvestorDiscoveryInput = z.object({
   corridor: z
     .string()
     .default('Highway 9, NJ')
-    .describe('Road corridor and state, e.g. "Highway 9, NJ" or "Route 1, NJ". Examples: "Highway 9, NJ", "Route 1, NJ", "Route 35, NJ", "US-1, NJ"'),
+    .describe('Road corridor name and state abbreviation. Format: "Road Name, ST". Examples: "Highway 9, NJ", "Route 1, NJ", "Broadway, NY", "4th Avenue, NY", "Amsterdam Avenue, NY", "Atlantic Avenue, NY", "Northern Boulevard, NY"'),
   property_type: z
     .string()
     .default('Retail')
@@ -133,7 +133,7 @@ export const ParcelLookupInput = z.object({
   address: z
     .string()
     .default('1240 Highway 9, Woodbridge NJ')
-    .describe('Full street address of the commercial property. Examples: "1240 Highway 9, Woodbridge NJ", "500 Route 1, Edison NJ", "123 Route 35, Middletown NJ"'),
+    .describe('Full street address of the commercial property. Examples: "1240 Highway 9, Woodbridge NJ", "500 Route 1, Edison NJ", "350 5th Avenue, New York NY", "123 Atlantic Avenue, Brooklyn NY"'),
 });
 
 export const ParcelLookupOutput = z.object({

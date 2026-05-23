@@ -9,6 +9,23 @@ import { getCached, setCache } from '../cache/helpers.js';
 import { resolveParcel } from '../ingest/resolvers.js';
 import { structuredError } from '../errors/codes.js';
 
+function formatParcel(r: any): string {
+  if (!r || r.status === 'not_found') return `Parcel not found.`;
+  const p = r.parcel;
+  if (!p) return `Parcel lookup returned status: ${r.status}.`;
+  const lines: string[] = [
+    `${p.address}, ${p.city}, ${p.state} ${p.zip}`,
+    `Type: ${p.property_type}${p.lot_size_acres ? ` | Lot: ${p.lot_size_acres.toFixed(2)} acres` : ''}${p.building_sqft ? ` | Building: ${p.building_sqft.toLocaleString()} sqft` : ''}`,
+  ];
+  if (p.last_sale_price || p.last_sale_date) {
+    lines.push(`Last sale: ${p.last_sale_date ?? 'unknown date'}${p.last_sale_price ? ` at $${p.last_sale_price.toLocaleString()}` : ''}`);
+  }
+  if (p.loan_maturity) lines.push(`Loan maturity: ${p.loan_maturity}`);
+  if (r.owner_name) lines.push(`Owner: ${r.owner_name}${r.entity_id ? ` (entity_id: ${r.entity_id})` : ''}`);
+  lines.push(`Parcel ID: ${p.parcel_id} | Data freshness: ${r.data_freshness}`);
+  return lines.join('\n');
+}
+
 export function registerParcelLookup(server: McpServer): void {
   server.registerTool(
     'parcel_lookup',
@@ -46,7 +63,7 @@ export function registerParcelLookup(server: McpServer): void {
       const cached = await getCached<Record<string, unknown>>(cacheKey);
       if (cached) {
         return {
-          content:           [{ type: 'text', text: JSON.stringify(cached) }],
+          content:           [{ type: 'text', text: formatParcel(cached as any) }],
           structuredContent: cached,
         };
       }
@@ -71,7 +88,7 @@ export function registerParcelLookup(server: McpServer): void {
 
       const payload = result as unknown as Record<string, unknown>;
       return {
-        content:           [{ type: 'text', text: JSON.stringify(result) }],
+        content:           [{ type: 'text', text: formatParcel(result as any) }],
         structuredContent: payload,
       };
     }
