@@ -41,7 +41,7 @@ export function registerInvestorDiscovery(server: McpServer): void {
       _meta: {
         surface:       'both',
         queryEligible: true,
-        latencyClass:  'fast',
+        latencyClass:  'slow',
         pricing:       { executeUsd: '0.10' },
         rateLimit: {
           maxRequestsPerMinute: 60,
