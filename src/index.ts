@@ -20,20 +20,16 @@ app.options('*', cors());
 app.use(express.json());
 
 // ─── Health check ─────────────────────────────────────────────────────────
-app.get('/health', async (_req, res) => {
-  try {
-    const dbResult = await query('SELECT 1');
-    const dbOk = dbResult.rows.length > 0;
-    res.json({
-      status: 'ok',
-      service: 'cre-investor-discovery-mcp',
-      version: '1.0.0',
-      db: dbOk ? 'connected' : 'error',
-      redis: 'connected',
-    });
-  } catch {
-    res.json({ status: 'ok', service: 'cre-investor-discovery-mcp', version: '1.0.0', db: 'error', redis: 'connected' });
-  }
+// Responds immediately (no awaiting DB) so Railway keepalive pings stay fast
+// and the Context platform initialize handshake stays under 5s on cold start.
+app.get('/health', (_req, res) => {
+  res.json({
+    status: 'ok',
+    service: 'cre-investor-discovery-mcp',
+    version: '1.0.0',
+  });
+  // Fire-and-forget — warms the DB pool without blocking the response
+  query('SELECT 1').catch(() => {});
 });
 
 // ─── MCP endpoint ─────────────────────────────────────────────────────────

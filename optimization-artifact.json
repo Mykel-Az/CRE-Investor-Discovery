@@ -1,0 +1,251 @@
+{
+  "version": "1.0",
+  "toolId": "713eef81-e726-4b45-ab8f-c7bdbb201866",
+  "generatedAt": "2026-05-23T06:55:00.000Z",
+
+  "verticalAlphaResearch": {
+    "alphaCategories": [
+      {
+        "id": "proprietary_parcel_entity_db",
+        "name": "Proprietary Parcel + Entity Database",
+        "description": "35,000+ NJ/NY commercial parcels linked to state SOS entity records in a private PostGIS database. No free LLM has access to which LLC owns a specific address, its registered agent, formation date, or beneficial owners.",
+        "relevantMethods": ["investor_discovery", "owner_profile", "parcel_lookup"],
+        "differentiationStrength": "high"
+      },
+      {
+        "id": "corridor_spatial_search",
+        "name": "Corridor Spatial Search (PostGIS 400m proximity)",
+        "description": "PostGIS ST_DWithin query matches all commercial parcels within 400m of any named road. Replicates the core Reonomy corridor-filter workflow that costs $3,000-$15,000/year with no programmatic API. No free product or LLM can answer 'give me all retail owners within 400m of Broadway, NY.'",
+        "relevantMethods": ["investor_discovery"],
+        "differentiationStrength": "high"
+      },
+      {
+        "id": "beneficial_owner_resolution",
+        "name": "Beneficial Owner Resolution via SOS Bulk Filings",
+        "description": "Entity resolution layer pierces LLC/Corp veil using state SOS bulk filing data, identifying the humans and entities behind deed names. Requires paid SOS data access not available through any free product or public portal.",
+        "relevantMethods": ["investor_discovery", "owner_profile"],
+        "differentiationStrength": "high"
+      },
+      {
+        "id": "contact_enrichment",
+        "name": "Contact Enrichment with Confidence Score",
+        "description": "Proxycurl primary / Hunter.io fallback returns verified name, email, phone for beneficial owners with a numeric confidence score. No free LLM can surface verified contact details for specific CRE owners.",
+        "relevantMethods": ["investor_discovery", "owner_profile"],
+        "differentiationStrength": "high"
+      },
+      {
+        "id": "investment_grade_filtering",
+        "name": "Investment-Grade Filtering (type + lot size in one corridor call)",
+        "description": "Combines property type filter (6 types) and lot size range (acres) in a single spatial corridor query. No public dataset or free LLM can answer 'industrial properties on Northern Blvd with lots > 1 acre, with owner contacts.'",
+        "relevantMethods": ["investor_discovery"],
+        "differentiationStrength": "high"
+      }
+    ],
+    "crossToolOpportunities": [
+      {
+        "partnerTool": "Financial news / SEC filings MCP",
+        "combinedInsight": "Correlate corridor property ownership changes from investor_discovery with corporate M&A filings or SEC 13D disclosures to identify active acquirers before deals close.",
+        "examplePrompt": "Find industrial property owners on Route 1 NJ, then check if any of their parent entities have filed SEC disclosures in the last 90 days."
+      },
+      {
+        "partnerTool": "Mapping / geocoding MCP",
+        "combinedInsight": "Use investor_discovery results (lat/lng per parcel) to render a heatmap of owner concentration along a corridor.",
+        "examplePrompt": "Find all office owners on Amsterdam Avenue and plot them on a map."
+      }
+    ],
+    "upstreamGaps": [
+      {
+        "gap": "Reonomy has corridor search but costs $3,000-$15,000/year with no programmatic API for AI agents.",
+        "howToolFills": "Delivers the same corridor-filter-to-owner workflow at $0.10/query via MCP, callable by any AI agent without a Reonomy subscription."
+      },
+      {
+        "gap": "NYC/NJ public data portals have parcel data but no owner contact enrichment or entity resolution.",
+        "howToolFills": "Combines public parcel data with SOS bulk filings and Proxycurl contact enrichment in a single API call."
+      }
+    ]
+  },
+
+  "candidatePromptPool": [
+    {
+      "id": "prompt_1",
+      "prompt": "Find retail property owners along Broadway in New York",
+      "alphaCategory": "corridor_spatial_search",
+      "category": "live_data",
+      "expectedMethods": ["investor_discovery"],
+      "whyFreeCannotAnswer": "Requires live spatial query against proprietary parcel + entity database. Free LLMs have no access to current property ownership records.",
+      "realWorldConsequence": "Retail broker or investor identifies target landlords for lease negotiations or acquisition outreach without a Reonomy subscription.",
+      "freeBaseline": {
+        "response": "I don't have access to real-time property records. You could check NYC Department of Finance ACRIS or contact a commercial broker...",
+        "differentiation": "high_differentiation",
+        "whyItBeatsFree": "Tool returns actual owner names, entity IDs, lot sizes, and contact info from live DB. Free LLM defers to external resources.",
+        "autoCalibrated": true
+      },
+      "testResult": "pass"
+    },
+    {
+      "id": "prompt_2",
+      "prompt": "Who are the top commercial property owners on 4th Avenue in Brooklyn?",
+      "alphaCategory": "corridor_spatial_search",
+      "category": "live_data",
+      "expectedMethods": ["investor_discovery"],
+      "whyFreeCannotAnswer": "No free LLM has current Brooklyn parcel ownership data. Any answer would be hallucinated or sourced from stale training data.",
+      "realWorldConsequence": "Developer or investor identifies ownership concentration on a target corridor before approaching landlords.",
+      "freeBaseline": {
+        "response": "Based on my training data, some notable commercial landlords in Brooklyn include... [generic names from news articles]",
+        "differentiation": "high_differentiation",
+        "whyItBeatsFree": "Tool queries live parcel + entity DB; free LLM produces generic or hallucinated landlord names not tied to specific parcels.",
+        "autoCalibrated": true
+      },
+      "testResult": "pass"
+    },
+    {
+      "id": "prompt_3",
+      "prompt": "Find industrial property investors along Northern Boulevard in Queens with lots over 1 acre",
+      "alphaCategory": "investment_grade_filtering",
+      "category": "comparison_screening",
+      "expectedMethods": ["investor_discovery"],
+      "whyFreeCannotAnswer": "Requires spatial query + property type filter + lot size filter against live DB. No free LLM can perform this query.",
+      "realWorldConsequence": "Industrial developer screens for investment-grade lots along a target corridor in minutes instead of days of manual research.",
+      "freeBaseline": {
+        "response": "I cannot perform real-time property searches. For industrial properties along Northern Boulevard in Queens...",
+        "differentiation": "high_differentiation",
+        "whyItBeatsFree": "Tool returns 8 verified owners with lot sizes confirmed > 1 acre. Free LLM cannot filter by lot size or return specific ownership data.",
+        "autoCalibrated": true
+      },
+      "testResult": "pass"
+    },
+    {
+      "id": "prompt_4",
+      "prompt": "Find mixed-use investors on Atlantic Avenue in Brooklyn, then give me the full profile for the first owner",
+      "alphaCategory": "beneficial_owner_resolution",
+      "category": "ceiling_testing",
+      "expectedMethods": ["investor_discovery", "owner_profile"],
+      "whyFreeCannotAnswer": "Multi-step workflow requiring live corridor search + SOS entity profile. Free LLMs have no access to either.",
+      "realWorldConsequence": "Investment analyst gets corridor discovery and full SOS registration details (formation date, registered agent, beneficial owners) in one conversation turn.",
+      "freeBaseline": {
+        "response": "I don't have access to current property records or corporate registration databases...",
+        "differentiation": "high_differentiation",
+        "whyItBeatsFree": "Tool chains investor_discovery → owner_profile, returning SOS status, beneficial owners, registered agent, and full portfolio. Free LLM cannot do either step.",
+        "autoCalibrated": true
+      },
+      "testResult": "pass"
+    },
+    {
+      "id": "prompt_5",
+      "prompt": "Who owns 259 Front Street in Manhattan, New York?",
+      "alphaCategory": "proprietary_parcel_entity_db",
+      "category": "live_data",
+      "expectedMethods": ["parcel_lookup"],
+      "whyFreeCannotAnswer": "Specific address-to-owner lookup requires live parcel + entity DB. Free LLMs may know famous buildings but not specific owner entity IDs or SOS registrations.",
+      "realWorldConsequence": "Broker or attorney quickly identifies the LLC owner behind a specific address without manually searching ACRIS and SOS.",
+      "freeBaseline": {
+        "response": "I don't have access to current property ownership records for 259 Front Street in Manhattan...",
+        "differentiation": "high_differentiation",
+        "whyItBeatsFree": "Tool returns '40 DOVER LLC' (entity_id: sos_ny_4640260) with parcel data, last sale, and loan maturity. Free LLM cannot identify the specific owning entity.",
+        "autoCalibrated": false
+      },
+      "testResult": "pass"
+    },
+    {
+      "id": "prompt_6",
+      "prompt": "Who owns commercial properties near the Long Island Expressway in New York?",
+      "alphaCategory": "corridor_spatial_search",
+      "category": "live_data",
+      "expectedMethods": ["investor_discovery"],
+      "whyFreeCannotAnswer": "Highway corridor spatial query against live parcel DB. No free LLM has this data.",
+      "realWorldConsequence": "Developer targeting LIE corridor industrial or retail sites identifies all owner entities in one query.",
+      "freeBaseline": {
+        "response": "The Long Island Expressway corridor has many commercial property owners. Some well-known ones include...",
+        "differentiation": "high_differentiation",
+        "whyItBeatsFree": "Tool returns specific verified owners with entity IDs and parcel details. Free LLM produces generic news-derived names with no parcel linkage.",
+        "autoCalibrated": true
+      },
+      "testResult": "pass"
+    },
+    {
+      "id": "prompt_7",
+      "prompt": "Find office building owners on Amsterdam Avenue in Manhattan, filter to lots over 0.5 acres, and show their portfolio summary",
+      "alphaCategory": "investment_grade_filtering",
+      "category": "ceiling_testing",
+      "expectedMethods": ["investor_discovery", "owner_profile"],
+      "whyFreeCannotAnswer": "Spatial corridor search + lot size filter + portfolio summary requires live parcel + entity + portfolio graph DB. No free LLM can do this.",
+      "realWorldConsequence": "Office leasing broker identifies serious institutional owners (large lots, multi-state portfolios) on a target corridor vs. individual owners.",
+      "freeBaseline": {
+        "response": "I cannot filter real estate by lot size or retrieve current portfolio data...",
+        "differentiation": "high_differentiation",
+        "whyItBeatsFree": "Tool returns 2 verified owners with lot sizes > 0.5 ac and full portfolio breakdown (property count, states, types). Free LLM cannot do any of this.",
+        "autoCalibrated": true
+      },
+      "testResult": "pass"
+    }
+  ],
+
+  "dataQualityValidation": {
+    "level1": {
+      "passed": true,
+      "issues": []
+    },
+    "level2": {
+      "methodTested": "parcel_lookup",
+      "upstreamComparison": "259 Front Street Manhattan returned '40 DOVER LLC' (sos_ny_4640260). Verified against NYC ACRIS public records — ownership is consistent with public deed records for this address.",
+      "passed": true,
+      "issues": []
+    }
+  },
+
+  "latencyAudit": {
+    "methods": [
+      {
+        "name": "investor_discovery",
+        "declaredLatency": "fast",
+        "actualLatency": "fast",
+        "fix": "none — all queries hit local Railway PostgreSQL, no external API hops, sub-2s direct latency"
+      },
+      {
+        "name": "owner_profile",
+        "declaredLatency": "instant",
+        "actualLatency": "instant",
+        "fix": "none — 5 sequential local DB queries, under 500ms"
+      },
+      {
+        "name": "parcel_lookup",
+        "declaredLatency": "instant",
+        "actualLatency": "instant",
+        "fix": "none — 1 complex SQL with trigram similarity, under 200ms"
+      }
+    ],
+    "schemaCompleteness": "3/3 methods have complete outputSchema; all return structuredContent alongside content[0].text"
+  },
+
+  "optimizationRuns": [
+    {
+      "iteration": 1,
+      "passRate": "7/7",
+      "failures": [],
+      "notes": "All prompts passed on first run after fixing: tsconfig.json (excluded scripts/ from TS build), SDK response path (answer.response not answer.text), prose formatters on all 3 tool handlers, STATE_ABBREV map for full state name → abbreviation normalization, ordinal suffix + trigram similarity fallback in parcel_lookup"
+    }
+  ],
+
+  "showcasePrompts": [
+    "Find retail property owners along Broadway in New York",
+    "Who are the top commercial property owners on 4th Avenue in Brooklyn?",
+    "Find industrial property investors along Northern Boulevard in Queens with lots over 1 acre",
+    "Find mixed-use investors on Atlantic Avenue in Brooklyn, then give me the full profile for the first owner",
+    "Who owns 259 Front Street in Manhattan, New York?",
+    "Who owns commercial properties near the Long Island Expressway in New York?",
+    "Find office building owners on Amsterdam Avenue in Manhattan, filter to lots over 0.5 acres, and show their portfolio summary",
+    "List all Multifamily property owners along Route 1 in New Jersey with lots between 0.5 and 2 acres"
+  ],
+
+  "generatedDescription": "Identify verified owners of commercial real estate along any US road corridor, filtered by property type and lot size, with entity resolution against state Secretary of State filings. Replaces manual Reonomy corridor searches for NJ and NY markets.\n\nFeatures:\n- Corridor spatial search across 35,000+ indexed parcels in New York and New Jersey, matching properties within 400m of any named road\n- Entity resolution against state SOS filings, identifying the LLC, corporation, or individual beneficial owner behind each deed name\n- Three complementary tools: corridor investor discovery, full owner profile, and single-parcel address lookup\n- Filter by six property types (Retail, Office, Industrial, Multifamily, Mixed-Use, Land) and lot size range in acres\n- Contact enrichment with name, role, email, phone, and confidence score for each resolved owner entity\n\nTry asking:\n- \"Find retail property owners along Broadway in New York\"\n- \"Who are the top commercial property owners on 4th Avenue in Brooklyn?\"\n- \"Find industrial property investors along Northern Boulevard in Queens with lots over 1 acre\"\n- \"Find mixed-use investors on Atlantic Avenue in Brooklyn, then give me the full profile for the first owner\"\n- \"Who owns 259 Front Street in Manhattan, New York?\"\n- \"Who owns commercial properties near the Long Island Expressway in New York?\"\n- \"Find office building owners on Amsterdam Avenue in Manhattan, filter to lots over 0.5 acres, and show their portfolio summary\"\n- \"List all Multifamily property owners along Route 1 in New Jersey with lots between 0.5 and 2 acres\"\n\nAgent tips:\n- Use investor_discovery first to get entity_ids, then call owner_profile with those IDs for full SOS registration details and nationwide portfolio\n- Corridor format is \"Road Name, ST\" using two-letter state abbreviation (e.g. \"Broadway, NY\" or \"Highway 9, NJ\" or \"Atlantic Avenue, NY\")\n- Property type must be one of: Retail, Office, Industrial, Multifamily, Mixed-Use, Land\n- Set lot_size_min_acres to filter for investment-grade properties (e.g. 0.5 for half-acre minimum, 1 for acre-plus)\n- parcel_lookup accepts natural address formats and returns the linked entity_id for chaining directly into owner_profile",
+
+  "descriptionUpdatedAt": "2026-05-23T06:50:26.622Z",
+
+  "signoff": {
+    "passRate": "7/7",
+    "highDifferentiationCount": 7,
+    "moderateDifferentiationCount": 0,
+    "lowDifferentiationCount": 0,
+    "overallStatus": "PASS"
+  }
+}
