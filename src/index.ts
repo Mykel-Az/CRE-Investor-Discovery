@@ -20,15 +20,13 @@ app.options('*', cors());
 app.use(express.json());
 
 // ─── Health check ─────────────────────────────────────────────────────────
-// Responds immediately (no awaiting DB) so Railway keepalive pings stay fast
-// and the Context platform initialize handshake stays under 5s on cold start.
 app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
     service: 'cre-investor-discovery-mcp',
     version: '1.0.0',
+    ts: new Date().toISOString(),
   });
-  // Fire-and-forget — warms the DB pool without blocking the response
   query('SELECT 1').catch(() => {});
 });
 
@@ -50,11 +48,31 @@ app.post('/mcp', async (req, res) => {
   await transport.handleRequest(req, res, req.body);
 });
 
+// ─── Self-ping (defined at module scope, not inside main) ─────────────────
+function startSelfPing(): void {
+  const PORT = parseInt(process.env.PORT ?? '3000', 10);
+  const selfUrl = process.env.RAILWAY_PUBLIC_DOMAIN
+    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}/health`
+    : `http://localhost:${PORT}/health`;
+
+  setInterval(async () => {
+    try {
+      const res = await fetch(selfUrl, { signal: AbortSignal.timeout(10_000) });
+      if (!res.ok) console.warn('[keepalive] Self-ping returned', res.status);
+    } catch (err) {
+      console.warn('[keepalive] Self-ping failed:', (err as Error).message);
+    }
+  }, 4 * 60 * 1000);
+
+  console.log('[keepalive] Self-ping loop started →', selfUrl);
+}
+
 // ─── Bootstrap ────────────────────────────────────────────────────────────
 async function main(): Promise<void> {
   await connectRedis();
   await connectDatabase();
   startBackgroundJobs();
+  startSelfPing();
 
   const PORT = parseInt(process.env.PORT ?? '3000', 10);
   app.listen(PORT, () => {
