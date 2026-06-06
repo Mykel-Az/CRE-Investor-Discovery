@@ -77,7 +77,7 @@ cron.schedule('0 2 * * 0', async () => {
 //   filing_number,name,entity_type,status,incorporated_date,
 //   registered_agent_name,registered_agent_address,filing_url
 
-cron.schedule('0 3 * * *', async () => {
+cron.schedule('0 10 * * *', async () => {
   console.log('[ingest/entities] Daily entity resolution refresh starting...');
   try {
     let sosUpserted = 0;
@@ -212,7 +212,9 @@ cron.schedule('0 3 * * *', async () => {
       await new Promise(resolve => setTimeout(resolve, 200));
     }
 
-    // ── Step 3: RapidFuzz matching on still-unmatched owner names ───────────
+    // Replace the fuzzy match loop inside the 3 AM cron with this:
+
+    // ── Step 3: RapidFuzz matching — yielding between batches ──────────────
     const unmatchedResult = await query(`
       SELECT DISTINCT owner_name_raw
       FROM parcels p
@@ -232,29 +234,42 @@ cron.schedule('0 3 * * *', async () => {
 
     let fuzzyMatches = 0;
 
-    for (const row of unmatchedResult.rows) {
-      const rawName = (row as Record<string, unknown>).owner_name_raw as string;
+    // Process in chunks of 10, yielding the event loop between each chunk
+    // so /health and MCP requests can still be served during the job
+    const FUZZY_CHUNK = 10;
+    const rows = unmatchedResult.rows;
 
-      let bestScore = 0;
-      let bestEntityId = '';
+    for (let i = 0; i < rows.length; i += FUZZY_CHUNK) {
+      const chunk = rows.slice(i, i + FUZZY_CHUNK);
 
-      for (const entity of entityNames) {
-        const score = fuzzball.token_set_ratio(rawName, entity.name);
-        if (score > bestScore) {
-          bestScore    = score;
-          bestEntityId = entity.id;
+      for (const row of chunk) {
+        const rawName = (row as Record<string, unknown>).owner_name_raw as string;
+
+        let bestScore = 0;
+        let bestEntityId = '';
+
+        for (const entity of entityNames) {
+          const score = fuzzball.token_set_ratio(rawName, entity.name);
+          if (score > bestScore) {
+            bestScore    = score;
+            bestEntityId = entity.id;
+          }
+        }
+
+        if (bestScore >= 90 && bestEntityId) {
+          await query(`
+            INSERT INTO entity_aliases (entity_id, alias_name, match_score, source)
+            VALUES ($1, $2, $3, 'fuzzball')
+            ON CONFLICT DO NOTHING
+          `, [bestEntityId, rawName, bestScore / 100]);
+
+          fuzzyMatches++;
         }
       }
 
-      if (bestScore >= 90 && bestEntityId) {
-        await query(`
-          INSERT INTO entity_aliases (entity_id, alias_name, match_score, source)
-          VALUES ($1, $2, $3, 'fuzzball')
-          ON CONFLICT DO NOTHING
-        `, [bestEntityId, rawName, bestScore / 100]);
-
-        fuzzyMatches++;
-      }
+      // Yield control back to the event loop after each chunk
+      // This lets /health and MCP requests be served during the job
+      await new Promise<void>(resolve => setImmediate(resolve));
     }
 
     // Recompute nested LLC→Trust→Individual graph traversal
@@ -319,7 +334,7 @@ function mapSosEntityType(raw: string): string {
 // ─── Portfolio graph recompute ────────────────────────────────────────────
 // Edge table: owner_entity_id → parcel_ids. Recompute daily after entity refresh.
 
-cron.schedule('0 4 * * *', async () => {
+cron.schedule('0 14 * * *', async () => {
   console.log('[ingest/portfolio] Daily portfolio graph recompute starting...');
   try {
     // Step 1: Exact name matches — parcels.owner_name_raw = entities.canonical_name
@@ -376,7 +391,7 @@ cron.schedule('0 4 * * *', async () => {
 // For top-queried entities, pre-warm the 30-day contact cache.
 // Cold misses are handled async by the contact enrichment worker below.
 
-cron.schedule('0 5 * * *', async () => {
+cron.schedule('0 18 * * *', async () => {
   console.log('[ingest/contacts] Contact cache pre-warm starting...');
   try {
     // Find top 500 most-queried entities that need contact refresh
@@ -617,7 +632,7 @@ export async function enqueueContactEnrichment(entityId: string, ownerName: stri
 export function startBackgroundJobs(): void {
   console.log('[ingest] Background jobs scheduled:');
   console.log('  - Parcel refresh:     Sunday 2 AM');
-  console.log('  - Entity resolution:  Daily  3 AM');
-  console.log('  - Portfolio graph:    Daily  4 AM');
-  console.log('  - Contact pre-warm:  Daily  5 AM');
+  console.log('  - Entity resolution:  Daily  10 AM');
+  console.log('  - Portfolio graph:    Daily  2 PM');
+  console.log('  - Contact pre-warm:  Daily  6 PM');
 }

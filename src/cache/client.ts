@@ -3,13 +3,33 @@ import { createClient } from 'redis';
 
 export const redis = createClient({
   url: process.env.REDIS_URL ?? 'redis://localhost:6379',
+  socket: {
+    // Upstash closes idle TLS connections — reconnect with backoff
+    reconnectStrategy: (retries) => {
+      if (retries > 10) return new Error('Redis reconnect limit reached');
+      return Math.min(retries * 500, 5_000);
+    },
+    // Keep the TLS socket alive at the OS level
+    keepAlive: 5000,
+    // Upstash requires TLS — don't reject on self-signed certs
+    tls: true,
+  },
 });
 
 redis.on('error', (err) => {
-  // Log but never crash — cache is best-effort
+  // Don't log repeated timeout noise — just log the first of each type
   console.error('[cache] Redis error:', err.message);
 });
 
+redis.on('reconnecting', () => {
+  console.log('[cache] Redis reconnecting...');
+});
+
+redis.on('ready', () => {
+  console.log('[cache] Redis ready');
+});
+
+let _pingInterval: ReturnType<typeof setInterval> | null = null;
 let connected = false;
 
 export async function connectRedis(): Promise<void> {
@@ -17,11 +37,25 @@ export async function connectRedis(): Promise<void> {
     await redis.connect();
     connected = true;
     console.log('[cache] Redis connected');
+
+    // Ping every 3 minutes — Upstash closes connections idle for too long.
+    // 3 minutes is safely under any Upstash idle threshold.
+    if (_pingInterval) clearInterval(_pingInterval);
+    _pingInterval = setInterval(async () => {
+      try {
+        await redis.ping();
+      } catch (err) {
+        // Swallow — the reconnectStrategy above handles reconnection
+      }
+    }, 3 * 60 * 1000);
+
   } catch (err) {
     console.error('[cache] Redis unavailable — running without cache:', err);
   }
 }
 
 export function isConnected(): boolean {
-  return connected;
+  return connected && redis.isReady;
 }
+
+export { };
