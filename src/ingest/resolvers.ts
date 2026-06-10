@@ -57,13 +57,29 @@ export async function resolveCorridorOwners(params: {
   lot_size_max_acres?: number;
   max_results: number;
 }): Promise<DiscoveryResult> {
-  // Step 1: Spatial query — find parcels within 400m of the named road corridor
   const corridorParts = params.corridor.split(',').map((s) => s.trim());
   const roadName  = corridorParts[0] ?? params.corridor;
   const rawState  = corridorParts[1]?.toUpperCase().trim() ?? '';
   const roadState = STATE_ABBREV[rawState] ?? rawState;
 
   const searchRadius = parseInt(process.env.CORRIDOR_SEARCH_RADIUS_METERS ?? '400', 10);
+
+  // Expand route-number variants so "Route 1" also matches "US 1", "US Highway 1", etc.
+  const routeNum = roadName.match(/\b(\d+[A-Z]?)\b/i)?.[1];
+  const ilikePatterns = [
+    `%${roadName}%`,
+    `%${roadName.replace(/\bBoulevard\b/gi, 'Blvd').replace(/\bAvenue\b/gi, 'Ave').replace(/\bStreet\b/gi, 'St')}%`,
+  ];
+  if (routeNum) {
+    ilikePatterns.push(
+      `%Route ${routeNum}%`,
+      `%US ${routeNum}%`,
+      `%US Route ${routeNum}%`,
+      `%US Highway ${routeNum}%`,
+      `%Highway ${routeNum}%`,
+      `%US-${routeNum}%`,
+    );
+  }
 
   const parcelQuery = `
     SELECT
@@ -75,11 +91,14 @@ export async function resolveCorridorOwners(params: {
       p.owner_name_raw, p.updated_at
     FROM parcels p
     JOIN roads r ON ST_DWithin(p.geom, r.geom, $1)
-    WHERE to_tsvector('english', r.road_name) @@ plainto_tsquery('english', $2)
-      AND ($3 = '' OR UPPER(r.state) = $3)
-      AND UPPER(p.property_type) = UPPER($4)
-      AND (p.lot_size_acres IS NULL OR p.lot_size_acres >= $5)
-      AND ($6::double precision IS NULL OR p.lot_size_acres <= $6)
+    WHERE (
+      to_tsvector('english', r.road_name) @@ plainto_tsquery('english', $2)
+      OR r.road_name ILIKE ANY($3::text[])
+    )
+      AND ($4 = '' OR UPPER(r.state) = $4)
+      AND UPPER(p.property_type) = UPPER($5)
+      AND (p.lot_size_acres IS NULL OR p.lot_size_acres >= $6)
+      AND ($7::double precision IS NULL OR p.lot_size_acres <= $7)
     ORDER BY p.lot_size_acres DESC NULLS LAST
     LIMIT 500
   `;
@@ -87,6 +106,7 @@ export async function resolveCorridorOwners(params: {
   const parcelsResult = await query(parcelQuery, [
     searchRadius,
     roadName,
+    ilikePatterns,
     roadState,
     params.property_type,
     params.lot_size_min_acres,
@@ -94,6 +114,19 @@ export async function resolveCorridorOwners(params: {
   ]);
 
   if (parcelsResult.rows.length === 0) {
+    // Return closest road names so the agent knows what corridor names are available
+    const closestRoadsResult = await query(
+      `SELECT DISTINCT road_name FROM roads
+       WHERE ($1 = '' OR UPPER(state) = $1)
+       ORDER BY similarity(road_name, $2) DESC
+       LIMIT 5`,
+      [roadState, roadName]
+    ).catch(() => ({ rows: [] as Record<string, unknown>[] }));
+
+    const closest_corridors = (closestRoadsResult.rows as Record<string, unknown>[])
+      .map((r) => r.road_name as string)
+      .filter(Boolean);
+
     return {
       status: 'empty',
       query_summary: {
@@ -102,6 +135,7 @@ export async function resolveCorridorOwners(params: {
         lot_size_min_acres: params.lot_size_min_acres,
         matched_parcels:    0,
         unique_owners:      0,
+        closest_corridors:  closest_corridors.length > 0 ? closest_corridors : undefined,
       },
       owners:     [],
       fallback:   false,
@@ -109,10 +143,9 @@ export async function resolveCorridorOwners(params: {
     };
   }
 
-  // Step 2: Group parcels by owner via portfolio_edges → entities
   const parcelIds = parcelsResult.rows.map((r: Record<string, unknown>) => r.parcel_id as string);
 
-  const ownerQuery = `
+  const ownersResult = await query(`
     SELECT DISTINCT ON (e.entity_id)
       e.entity_id, e.canonical_name, e.entity_type, e.jurisdiction,
       e.status, e.updated_at,
@@ -122,74 +155,102 @@ export async function resolveCorridorOwners(params: {
     WHERE pe.parcel_id = ANY($1)
     ORDER BY e.entity_id, pe.confidence DESC
     LIMIT $2
-  `;
+  `, [parcelIds, params.max_results]);
 
-  const ownersResult = await query(ownerQuery, [parcelIds, params.max_results]);
+  if (ownersResult.rows.length === 0) {
+    return {
+      status: 'empty',
+      query_summary: {
+        corridor: params.corridor, property_type: params.property_type,
+        lot_size_min_acres: params.lot_size_min_acres,
+        matched_parcels: parcelsResult.rows.length, unique_owners: 0,
+      },
+      owners: [], fallback: false, queried_at: new Date().toISOString(),
+    };
+  }
 
-  // Step 3: For each owner, build the full response object
+  const entityIds = ownersResult.rows.map((r: Record<string, unknown>) => r.entity_id as string);
+
+  // Batch all per-owner DB lookups into 3 queries instead of N×3
+  const [portfolioBatch, corridorPropsBatch, contactBatch] = await Promise.all([
+    query(`
+      SELECT
+        pe.entity_id,
+        COUNT(*)::int AS property_count,
+        SUM(p.building_sqft)::double precision AS total_sqft,
+        ARRAY_AGG(DISTINCT p.state) AS states_present,
+        ARRAY_AGG(DISTINCT p.property_type) AS property_types
+      FROM portfolio_edges pe
+      JOIN parcels p ON p.parcel_id = pe.parcel_id
+      WHERE pe.entity_id = ANY($1)
+      GROUP BY pe.entity_id
+    `, [entityIds]),
+
+    query(`
+      SELECT
+        pe.entity_id,
+        p.parcel_id, p.address, p.city, p.state, p.zip,
+        p.lot_size_acres, p.building_sqft, p.property_type,
+        p.last_sale_price, p.last_sale_date::text, p.loan_maturity::text,
+        ST_Y(p.geom::geometry) AS latitude,
+        ST_X(p.geom::geometry) AS longitude
+      FROM portfolio_edges pe
+      JOIN parcels p ON p.parcel_id = pe.parcel_id
+      WHERE pe.entity_id = ANY($1)
+        AND pe.parcel_id = ANY($2)
+    `, [entityIds, parcelIds]),
+
+    query(`
+      SELECT entity_id, name, role, email, phone, confidence, source
+      FROM contacts
+      WHERE entity_id = ANY($1) AND expires_at > NOW()
+    `, [entityIds]),
+  ]);
+
+  const portfolioByEntity = new Map<string, Record<string, unknown>>(
+    (portfolioBatch.rows as Record<string, unknown>[]).map((r) => [r.entity_id as string, r])
+  );
+
+  const corridorPropsByEntity = new Map<string, Record<string, unknown>[]>();
+  for (const row of corridorPropsBatch.rows as Record<string, unknown>[]) {
+    const eid = row.entity_id as string;
+    if (!corridorPropsByEntity.has(eid)) corridorPropsByEntity.set(eid, []);
+    corridorPropsByEntity.get(eid)!.push(row);
+  }
+
+  const contactByEntity = new Map<string, Record<string, unknown>>(
+    (contactBatch.rows as Record<string, unknown>[]).map((r) => [r.entity_id as string, r])
+  );
+
+  // Build owner objects — Redis cache checks still run concurrently per owner
   const owners = await Promise.all(
     ownersResult.rows.map(async (owner: Record<string, unknown>) => {
-      const entityId     = owner.entity_id as string;
-      const updatedAt    = owner.updated_at as string;
+      const entityId  = owner.entity_id as string;
+      const updatedAt = owner.updated_at as string;
 
-      // Portfolio summary
-      const portfolioQuery = `
-        SELECT
-          COUNT(*)::int AS property_count,
-          SUM(p.building_sqft)::double precision AS total_sqft,
-          ARRAY_AGG(DISTINCT p.state) AS states_present,
-          ARRAY_AGG(DISTINCT p.property_type) AS property_types
-        FROM portfolio_edges pe
-        JOIN parcels p ON p.parcel_id = pe.parcel_id
-        WHERE pe.entity_id = $1
-      `;
-      const portfolioResult = await query(portfolioQuery, [entityId]);
-      const pf = portfolioResult.rows[0] as Record<string, unknown> | undefined;
+      const pf    = portfolioByEntity.get(entityId);
+      const props = corridorPropsByEntity.get(entityId) ?? [];
 
-      // Properties in this corridor
-      const corridorPropsQuery = `
-        SELECT
-          p.parcel_id, p.address, p.city, p.state, p.zip,
-          p.lot_size_acres, p.building_sqft, p.property_type,
-          p.last_sale_price, p.last_sale_date::text, p.loan_maturity::text,
-          ST_Y(p.geom::geometry) AS latitude,
-          ST_X(p.geom::geometry) AS longitude
-        FROM portfolio_edges pe
-        JOIN parcels p ON p.parcel_id = pe.parcel_id
-        WHERE pe.entity_id = $1
-          AND pe.parcel_id = ANY($2)
-      `;
-      const corridorProps = await query(corridorPropsQuery, [entityId, parcelIds]);
-
-      // Contact (from DB, then Redis cache)
       let contact = null;
       let contactStatus: 'available' | 'not_available' | 'pending' = 'not_available';
 
-      const contactResult = await query(
-        `SELECT name, role, email, phone, confidence, source, expires_at
-         FROM contacts WHERE entity_id = $1 AND expires_at > NOW()`,
-        [entityId]
-      );
-
-      if (contactResult.rows.length > 0) {
-        const c = contactResult.rows[0] as Record<string, unknown>;
+      const dbContact = contactByEntity.get(entityId);
+      if (dbContact) {
         contact = {
-          name:       (c.name as string) ?? '',
-          role:       (c.role as string) ?? '',
-          email:      (c.email as string) ?? null,
-          phone:      (c.phone as string) ?? null,
-          confidence: (c.confidence as number) ?? 0,
-          source:     (c.source as string) ?? 'unknown',
+          name:       (dbContact.name as string) ?? '',
+          role:       (dbContact.role as string) ?? '',
+          email:      (dbContact.email as string) ?? null,
+          phone:      (dbContact.phone as string) ?? null,
+          confidence: (dbContact.confidence as number) ?? 0,
+          source:     (dbContact.source as string) ?? 'unknown',
         };
         contactStatus = 'available';
       } else {
-        // Check Redis for pending enrichment, or enqueue
         const cachedContact = await getCached<Record<string, unknown>>(`contact:${entityId}`);
         if (cachedContact) {
           contact = cachedContact as unknown as typeof contact;
           contactStatus = 'available';
         } else {
-          // Enqueue async enrichment — will be available on next query
           await enqueueContactEnrichment(entityId, (owner.canonical_name as string) ?? '');
           contactStatus = 'pending';
         }
@@ -211,7 +272,7 @@ export async function resolveCorridorOwners(params: {
         },
         contact,
         contact_status: contactStatus,
-        properties_in_corridor: corridorProps.rows.map((p: Record<string, unknown>) => ({
+        properties_in_corridor: props.map((p: Record<string, unknown>) => ({
           address:         (p.address as string) ?? '',
           city:            (p.city as string) ?? '',
           state:           (p.state as string) ?? '',
@@ -232,12 +293,11 @@ export async function resolveCorridorOwners(params: {
     })
   );
 
-  // Log query for pre-warming analytics
   for (const o of owners) {
     query(
       'INSERT INTO query_log (tool_name, entity_id, corridor) VALUES ($1, $2, $3)',
       ['investor_discovery', o.entity_id, params.corridor]
-    ).catch(() => { /* best-effort logging */ });
+    ).catch(() => {});
   }
 
   return {

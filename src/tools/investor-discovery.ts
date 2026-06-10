@@ -12,7 +12,13 @@ import { structuredError } from '../errors/codes.js';
 function formatDiscovery(r: any): string {
   if (!r || !r.owners) return 'No results found.';
   const { query_summary: q, owners } = r;
-  if (!owners.length) return `No ${q?.property_type ?? 'commercial'} property owners found along ${q?.corridor ?? 'the corridor'}.`;
+  if (!owners.length) {
+    const base = `No ${q?.property_type ?? 'commercial'} property owners found along ${q?.corridor ?? 'the corridor'}.`;
+    const suggestions = q?.closest_corridors?.length
+      ? ` Closest available corridors in this state: ${q.closest_corridors.join(', ')}. Retry with one of these exact corridor names.`
+      : '';
+    return base + suggestions;
+  }
   const lines: string[] = [
     `Found ${owners.length} ${q?.property_type ?? ''} property owner(s) along ${q?.corridor ?? 'the corridor'} (${q?.matched_parcels ?? 0} parcels matched).`,
   ];

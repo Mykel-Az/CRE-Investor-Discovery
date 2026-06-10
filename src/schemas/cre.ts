@@ -73,6 +73,7 @@ export const InvestorDiscoveryOutput = z.object({
     lot_size_min_acres: z.number(),
     matched_parcels:    z.number(),
     unique_owners:      z.number(),
+    closest_corridors:  z.array(z.string()).optional(),
   }),
   owners: z.array(z.object({
     owner_name:                   z.string(),
