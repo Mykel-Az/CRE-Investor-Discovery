@@ -4,16 +4,12 @@ import { createClient } from 'redis';
 export const redis = createClient({
   url: process.env.REDIS_URL ?? 'redis://localhost:6379',
   socket: {
-    // Upstash closes idle TLS connections — reconnect with backoff
-    reconnectStrategy: (retries) => {
+    reconnectStrategy: (retries: number) => {
       if (retries > 10) return new Error('Redis reconnect limit reached');
-      return Math.min(retries * 500, 5_000);
+      return Math.min(retries * 500, 5000);
     },
-    // Keep the TLS socket alive at the OS level
-    keepAlive: 5000,
-    // Upstash requires TLS — don't reject on self-signed certs
-    tls: true,
-  },
+    connectTimeout: 10000,
+  }
 });
 
 redis.on('error', (err) => {
