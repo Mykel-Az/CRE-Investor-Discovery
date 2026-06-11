@@ -65,23 +65,43 @@ export async function resolveCorridorOwners(params: {
   const searchRadius = parseInt(process.env.CORRIDOR_SEARCH_RADIUS_METERS ?? '400', 10);
 
   // Expand route-number variants so "Route 1" also matches "US 1", "US Highway 1", etc.
+  // Only apply ILIKE for numbered routes — named streets (Broadway, Atlantic Ave) use FTS only
+  // to avoid full sequential scans on the roads table.
   const routeNum = roadName.match(/\b(\d+[A-Z]?)\b/i)?.[1];
-  const ilikePatterns = [
-    `%${roadName}%`,
-    `%${roadName.replace(/\bBoulevard\b/gi, 'Blvd').replace(/\bAvenue\b/gi, 'Ave').replace(/\bStreet\b/gi, 'St')}%`,
-  ];
-  if (routeNum) {
-    ilikePatterns.push(
-      `%Route ${routeNum}%`,
-      `%US ${routeNum}%`,
-      `%US Route ${routeNum}%`,
-      `%US Highway ${routeNum}%`,
-      `%Highway ${routeNum}%`,
-      `%US-${routeNum}%`,
-    );
-  }
+  const hasRouteNum = routeNum != null;
+  const ilikePatterns = hasRouteNum ? [
+    `%Route ${routeNum}%`,
+    `%US ${routeNum}%`,
+    `%US Route ${routeNum}%`,
+    `%US Highway ${routeNum}%`,
+    `%Highway ${routeNum}%`,
+    `%US-${routeNum}%`,
+    `%NJ ${routeNum}%`,
+    `%NY ${routeNum}%`,
+  ] : [];
+
+  // Use a CTE to filter matching roads FIRST (uses GIN/FTS index), then find
+  // nearby parcels. This avoids the O(all_parcels × all_roads) cross-join
+  // that caused 200+s response times on cold queries.
+  const roadFilter = hasRouteNum
+    ? `(to_tsvector('english', r.road_name) @@ plainto_tsquery('english', $2) OR r.road_name ILIKE ANY($3::text[]))`
+    : `to_tsvector('english', r.road_name) @@ plainto_tsquery('english', $2)`;
+
+  // Parameter positions differ depending on whether we have ILIKE patterns
+  // Named street:  $1=radius $2=roadName $3=state $4=type $5=minAcres $6=maxAcres
+  // Route number:  $1=radius $2=roadName $3=ilikePatterns $4=state $5=type $6=minAcres $7=maxAcres
+  const stateParam  = hasRouteNum ? '$4' : '$3';
+  const typeParam   = hasRouteNum ? '$5' : '$4';
+  const minParam    = hasRouteNum ? '$6' : '$5';
+  const maxParam    = hasRouteNum ? '$7' : '$6';
 
   const parcelQuery = `
+    WITH matching_roads AS (
+      SELECT DISTINCT r.geom
+      FROM roads r
+      WHERE ${roadFilter}
+        AND (${stateParam} = '' OR UPPER(r.state) = ${stateParam})
+    )
     SELECT
       p.parcel_id, p.address, p.city, p.state, p.zip,
       p.lot_size_acres, p.building_sqft, p.property_type,
@@ -90,28 +110,21 @@ export async function resolveCorridorOwners(params: {
       ST_X(p.geom::geometry) AS longitude,
       p.owner_name_raw, p.updated_at
     FROM parcels p
-    JOIN roads r ON ST_DWithin(p.geom, r.geom, $1)
-    WHERE (
-      to_tsvector('english', r.road_name) @@ plainto_tsquery('english', $2)
-      OR r.road_name ILIKE ANY($3::text[])
+    WHERE EXISTS (
+      SELECT 1 FROM matching_roads mr WHERE ST_DWithin(p.geom, mr.geom, $1)
     )
-      AND ($4 = '' OR UPPER(r.state) = $4)
-      AND UPPER(p.property_type) = UPPER($5)
-      AND (p.lot_size_acres IS NULL OR p.lot_size_acres >= $6)
-      AND ($7::double precision IS NULL OR p.lot_size_acres <= $7)
+      AND UPPER(p.property_type) = UPPER(${typeParam})
+      AND (p.lot_size_acres IS NULL OR p.lot_size_acres >= ${minParam})
+      AND (${maxParam}::double precision IS NULL OR p.lot_size_acres <= ${maxParam})
     ORDER BY p.lot_size_acres DESC NULLS LAST
     LIMIT 500
   `;
 
-  const parcelsResult = await query(parcelQuery, [
-    searchRadius,
-    roadName,
-    ilikePatterns,
-    roadState,
-    params.property_type,
-    params.lot_size_min_acres,
-    params.lot_size_max_acres ?? null,
-  ]);
+  const queryParams = hasRouteNum
+    ? [searchRadius, roadName, ilikePatterns, roadState, params.property_type, params.lot_size_min_acres, params.lot_size_max_acres ?? null]
+    : [searchRadius, roadName, roadState, params.property_type, params.lot_size_min_acres, params.lot_size_max_acres ?? null];
+
+  const parcelsResult = await query(parcelQuery, queryParams);
 
   if (parcelsResult.rows.length === 0) {
     // Return closest road names so the agent knows what corridor names are available
