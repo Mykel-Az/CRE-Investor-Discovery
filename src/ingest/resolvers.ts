@@ -482,37 +482,56 @@ export async function resolveOwnerProfile(params: {
 // ─── Layer 1: Single parcel by address ────────────────────────────────────
 
 export async function resolveParcel(address: string): Promise<ParcelResult> {
-  // Normalize ordinal suffixes and common abbreviations for better FTS matching
-  const normalised = address
-    .replace(/\b(\d+)(st|nd|rd|th)\b/gi, '$1')   // 5th → 5, 3rd → 3
-    .replace(/\bAvenue\b/gi, 'Ave')
-    .replace(/\bStreet\b/gi, 'St')
-    .replace(/\bBoulevard\b/gi, 'Blvd')
-    .replace(/\bDrive\b/gi, 'Dr')
-    .replace(/\bRoad\b/gi, 'Rd');
+  // Parse "Street, City ST". The street drives matching against p.address,
+  // which has both an FTS GIN index and a trigram index. Matching a
+  // concatenation of address+city+state+zip (the old query) defeats every
+  // index and forces a sequential scan of all 16M parcels — the cause of the
+  // 38s lookups.
+  const parts  = address.split(',').map((s) => s.trim()).filter(Boolean);
+  const street = parts[0] ?? address;
+  const city   = (parts[1] ?? '').replace(/\s+[A-Za-z]{2}$/, '').trim(); // drop trailing state abbrev
 
-  const result = await query(
-    `SELECT
-       p.parcel_id, p.address, p.city, p.state, p.zip,
-       p.lot_size_acres, p.building_sqft, p.property_type,
-       p.last_sale_price, p.last_sale_date::text, p.loan_maturity::text,
-       ST_Y(p.geom::geometry) AS latitude,
-       ST_X(p.geom::geometry) AS longitude,
-       p.owner_name_raw, p.updated_at,
-       pe.entity_id,
-       e.canonical_name AS owner_name
-     FROM parcels p
-     LEFT JOIN portfolio_edges pe ON pe.parcel_id = p.parcel_id
-     LEFT JOIN entities e ON e.entity_id = pe.entity_id
-     WHERE to_tsvector('english', p.address || ' ' || p.city || ' ' || p.state || ' ' || p.zip)
-           @@ plainto_tsquery('english', $1)
-        OR UPPER(p.address || ' ' || p.city || ' ' || p.state) LIKE UPPER($2)
-        OR similarity(UPPER(p.address || ' ' || p.city || ' ' || COALESCE(p.state,'')), UPPER($3)) > 0.4
-     ORDER BY similarity(UPPER(p.address || ' ' || p.city || ' ' || COALESCE(p.state,'')), UPPER($3)) DESC,
-              pe.confidence DESC NULLS LAST
-     LIMIT 5`,
-    [normalised, `%${normalised.replace(/\s+/g, '%')}%`, address]
+  const SELECT = `
+    SELECT
+      p.parcel_id, p.address, p.city, p.state, p.zip,
+      p.lot_size_acres, p.building_sqft, p.property_type,
+      p.last_sale_price, p.last_sale_date::text, p.loan_maturity::text,
+      ST_Y(p.geom::geometry) AS latitude,
+      ST_X(p.geom::geometry) AS longitude,
+      p.owner_name_raw, p.updated_at,
+      pe.entity_id,
+      e.canonical_name AS owner_name
+    FROM parcels p
+    LEFT JOIN portfolio_edges pe ON pe.parcel_id = p.parcel_id
+    LEFT JOIN entities e ON e.entity_id = pe.entity_id`;
+
+  // City is a soft boost (prefer the matching city), never a hard filter — so a
+  // mis-parsed city can't turn a real match into a false "not found".
+  const ORDER = `
+    ORDER BY
+      (CASE WHEN $2 <> '' AND p.city ILIKE '%' || $2 || '%' THEN 1 ELSE 0 END) DESC,
+      similarity(p.address, $1) DESC,
+      pe.confidence DESC NULLS LAST
+    LIMIT 5`;
+
+  // Primary: FTS on p.address (idx_parcels_address) — fast and precise.
+  let result = await query(
+    `${SELECT}
+     WHERE to_tsvector('english', p.address) @@ plainto_tsquery('english', $1)
+     ${ORDER}`,
+    [street, city]
   );
+
+  // Fallback: trigram fuzzy match (idx_parcels_address_trgm) when FTS misses
+  // (abbreviations, ordinals, typos).
+  if (result.rows.length === 0) {
+    result = await query(
+      `${SELECT}
+       WHERE p.address % $1
+       ${ORDER}`,
+      [street, city]
+    );
+  }
 
   if (result.rows.length === 0) {
     return {
