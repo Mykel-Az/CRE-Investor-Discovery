@@ -80,54 +80,54 @@ export async function resolveCorridorOwners(params: {
     `%NY ${routeNum}%`,
   ] : [];
 
-  // Use a CTE to filter matching roads FIRST (uses GIN/FTS index), then find
-  // nearby parcels. This avoids the O(all_parcels × all_roads) cross-join
-  // that caused 200+s response times on cold queries.
-  const roadFilter = hasRouteNum
-    ? `(to_tsvector('english', r.road_name) @@ plainto_tsquery('english', $2) OR r.road_name ILIKE ANY($3::text[]))`
-    : `to_tsvector('english', r.road_name) @@ plainto_tsquery('english', $2)`;
+  // ── Edges-first corridor query ──────────────────────────────────────────
+  // Drive from the ~38K owned parcels (portfolio_edges), NOT the 16M parcels.
+  // For each owned parcel we check nearby corridor roads via the roads
+  // GIST + FTS indexes. The tool only ever surfaces parcels that have a
+  // resolved owner, so starting from the owned set turns a 200s+ scan of
+  // every parcel near 1,000+ road segments into a few seconds.
+  const roadExists = hasRouteNum
+    ? `(to_tsvector('english', r.road_name) @@ plainto_tsquery('english', $4) OR r.road_name ILIKE ANY($7::text[]))`
+    : `to_tsvector('english', r.road_name) @@ plainto_tsquery('english', $4)`;
 
-  // Parameter positions differ depending on whether we have ILIKE patterns
-  // Named street:  $1=radius $2=roadName $3=state $4=type $5=minAcres $6=maxAcres
-  // Route number:  $1=radius $2=roadName $3=ilikePatterns $4=state $5=type $6=minAcres $7=maxAcres
-  const stateParam  = hasRouteNum ? '$4' : '$3';
-  const typeParam   = hasRouteNum ? '$5' : '$4';
-  const minParam    = hasRouteNum ? '$6' : '$5';
-  const maxParam    = hasRouteNum ? '$7' : '$6';
+  // Fetch a candidate pool proportional to how many owners we need, not a flat
+  // 500. A global ORDER BY would force every matching parcel to be found and
+  // sorted (the slow path on dense corridors like Atlantic Avenue); instead we
+  // let Postgres stop early at the cap and sort the fetched set in JS below.
+  const fetchCap = Math.min(500, Math.max(100, (params.max_results ?? 10) * 15));
 
-  const parcelQuery = `
-    WITH matching_roads AS (
-      SELECT DISTINCT r.geom
-      FROM roads r
-      WHERE ${roadFilter}
-        AND (${stateParam} = '' OR UPPER(r.state) = ${stateParam})
-    )
+  const corridorQuery = `
     SELECT
       p.parcel_id, p.address, p.city, p.state, p.zip,
       p.lot_size_acres, p.building_sqft, p.property_type,
       p.last_sale_price, p.last_sale_date::text, p.loan_maturity::text,
       ST_Y(p.geom::geometry) AS latitude,
       ST_X(p.geom::geometry) AS longitude,
-      p.owner_name_raw, p.updated_at
-    FROM parcels p
-    WHERE EXISTS (
-      SELECT 1 FROM matching_roads mr WHERE ST_DWithin(p.geom, mr.geom, $1)
-    )
-      AND UPPER(p.property_type) = UPPER(${typeParam})
-      AND (p.lot_size_acres IS NULL OR p.lot_size_acres >= ${minParam})
-      AND (${maxParam}::double precision IS NULL OR p.lot_size_acres <= ${maxParam})
-    ORDER BY p.lot_size_acres DESC NULLS LAST
-    LIMIT 500
+      pe.entity_id, pe.confidence AS resolution_confidence
+    FROM portfolio_edges pe
+    JOIN parcels p ON p.parcel_id = pe.parcel_id
+    WHERE UPPER(p.property_type) = UPPER($1)
+      AND (p.lot_size_acres IS NULL OR p.lot_size_acres >= $2)
+      AND ($3::double precision IS NULL OR p.lot_size_acres <= $3)
+      AND EXISTS (
+        SELECT 1 FROM roads r
+        WHERE ${roadExists}
+          AND ($5 = '' OR UPPER(r.state) = $5)
+          AND ST_DWithin(p.geom, r.geom, $6)
+      )
+    LIMIT ${fetchCap}
   `;
 
-  const queryParams = hasRouteNum
-    ? [searchRadius, roadName, ilikePatterns, roadState, params.property_type, params.lot_size_min_acres, params.lot_size_max_acres ?? null]
-    : [searchRadius, roadName, roadState, params.property_type, params.lot_size_min_acres, params.lot_size_max_acres ?? null];
+  const corridorParams = hasRouteNum
+    ? [params.property_type, params.lot_size_min_acres, params.lot_size_max_acres ?? null, roadName, roadState, searchRadius, ilikePatterns]
+    : [params.property_type, params.lot_size_min_acres, params.lot_size_max_acres ?? null, roadName, roadState, searchRadius];
 
-  const parcelsResult = await query(parcelQuery, queryParams);
+  const corridorResult = await query(corridorQuery, corridorParams);
+  const corridorRows = (corridorResult.rows as Record<string, unknown>[])
+    .sort((a, b) => ((b.lot_size_acres as number) ?? 0) - ((a.lot_size_acres as number) ?? 0));
 
-  if (parcelsResult.rows.length === 0) {
-    // Return closest road names so the agent knows what corridor names are available
+  if (corridorRows.length === 0) {
+    // Return closest road names so the agent knows what corridor names exist
     const closestRoadsResult = await query(
       `SELECT DISTINCT road_name FROM roads
        WHERE ($1 = '' OR UPPER(state) = $1)
@@ -156,36 +156,31 @@ export async function resolveCorridorOwners(params: {
     };
   }
 
-  const parcelIds = parcelsResult.rows.map((r: Record<string, unknown>) => r.parcel_id as string);
-
-  const ownersResult = await query(`
-    SELECT DISTINCT ON (e.entity_id)
-      e.entity_id, e.canonical_name, e.entity_type, e.jurisdiction,
-      e.status, e.updated_at,
-      pe.confidence AS resolution_confidence
-    FROM portfolio_edges pe
-    JOIN entities e ON e.entity_id = pe.entity_id
-    WHERE pe.parcel_id = ANY($1)
-    ORDER BY e.entity_id, pe.confidence DESC
-    LIMIT $2
-  `, [parcelIds, params.max_results]);
-
-  if (ownersResult.rows.length === 0) {
-    return {
-      status: 'empty',
-      query_summary: {
-        corridor: params.corridor, property_type: params.property_type,
-        lot_size_min_acres: params.lot_size_min_acres,
-        matched_parcels: parcelsResult.rows.length, unique_owners: 0,
-      },
-      owners: [], fallback: false, queried_at: new Date().toISOString(),
-    };
+  // Group corridor parcels by owner, preserving lot-size-desc order for selection
+  const corridorPropsByEntity = new Map<string, Record<string, unknown>[]>();
+  const confidenceByEntity = new Map<string, number>();
+  const entityOrder: string[] = [];
+  for (const row of corridorRows) {
+    const eid = row.entity_id as string;
+    if (!eid) continue;
+    if (!corridorPropsByEntity.has(eid)) {
+      corridorPropsByEntity.set(eid, []);
+      entityOrder.push(eid);
+    }
+    corridorPropsByEntity.get(eid)!.push(row);
+    const conf = (row.resolution_confidence as number) ?? 0;
+    confidenceByEntity.set(eid, Math.max(confidenceByEntity.get(eid) ?? 0, conf));
   }
 
-  const entityIds = ownersResult.rows.map((r: Record<string, unknown>) => r.entity_id as string);
+  const entityIds = entityOrder.slice(0, params.max_results);
 
-  // Batch all per-owner DB lookups into 3 queries instead of N×3
-  const [portfolioBatch, corridorPropsBatch, contactBatch] = await Promise.all([
+  // Entity metadata + full-portfolio summary + contacts — 3 batch queries
+  const [entityMetaBatch, portfolioBatch, contactBatch] = await Promise.all([
+    query(`
+      SELECT entity_id, canonical_name, entity_type, jurisdiction, status, updated_at
+      FROM entities WHERE entity_id = ANY($1)
+    `, [entityIds]),
+
     query(`
       SELECT
         pe.entity_id,
@@ -200,44 +195,39 @@ export async function resolveCorridorOwners(params: {
     `, [entityIds]),
 
     query(`
-      SELECT
-        pe.entity_id,
-        p.parcel_id, p.address, p.city, p.state, p.zip,
-        p.lot_size_acres, p.building_sqft, p.property_type,
-        p.last_sale_price, p.last_sale_date::text, p.loan_maturity::text,
-        ST_Y(p.geom::geometry) AS latitude,
-        ST_X(p.geom::geometry) AS longitude
-      FROM portfolio_edges pe
-      JOIN parcels p ON p.parcel_id = pe.parcel_id
-      WHERE pe.entity_id = ANY($1)
-        AND pe.parcel_id = ANY($2)
-    `, [entityIds, parcelIds]),
-
-    query(`
       SELECT entity_id, name, role, email, phone, confidence, source
       FROM contacts
       WHERE entity_id = ANY($1) AND expires_at > NOW()
     `, [entityIds]),
   ]);
 
+  const entityMetaByEntity = new Map<string, Record<string, unknown>>(
+    (entityMetaBatch.rows as Record<string, unknown>[]).map((r) => [r.entity_id as string, r])
+  );
+
   const portfolioByEntity = new Map<string, Record<string, unknown>>(
     (portfolioBatch.rows as Record<string, unknown>[]).map((r) => [r.entity_id as string, r])
   );
-
-  const corridorPropsByEntity = new Map<string, Record<string, unknown>[]>();
-  for (const row of corridorPropsBatch.rows as Record<string, unknown>[]) {
-    const eid = row.entity_id as string;
-    if (!corridorPropsByEntity.has(eid)) corridorPropsByEntity.set(eid, []);
-    corridorPropsByEntity.get(eid)!.push(row);
-  }
 
   const contactByEntity = new Map<string, Record<string, unknown>>(
     (contactBatch.rows as Record<string, unknown>[]).map((r) => [r.entity_id as string, r])
   );
 
+  // Selected owners in deterministic (lot-size-desc) order
+  const selectedOwners: Record<string, unknown>[] = entityIds.map((eid) => {
+    const meta = entityMetaByEntity.get(eid) ?? {};
+    return {
+      entity_id:             eid,
+      canonical_name:        meta.canonical_name,
+      entity_type:           meta.entity_type,
+      updated_at:            meta.updated_at,
+      resolution_confidence: confidenceByEntity.get(eid) ?? 0,
+    };
+  });
+
   // Build owner objects — Redis cache checks still run concurrently per owner
   const owners = await Promise.all(
-    ownersResult.rows.map(async (owner: Record<string, unknown>) => {
+    selectedOwners.map(async (owner: Record<string, unknown>) => {
       const entityId  = owner.entity_id as string;
       const updatedAt = owner.updated_at as string;
 
@@ -319,7 +309,7 @@ export async function resolveCorridorOwners(params: {
       corridor:           params.corridor,
       property_type:      params.property_type,
       lot_size_min_acres: params.lot_size_min_acres,
-      matched_parcels:    parcelsResult.rows.length,
+      matched_parcels:    corridorRows.length,
       unique_owners:      owners.length,
     },
     owners,
