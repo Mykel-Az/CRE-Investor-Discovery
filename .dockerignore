@@ -1,0 +1,13 @@
+node_modules
+dist
+.git
+.github
+.claude
+.env
+.env.*
+data
+*.md
+scripts
+optimization-artifact.json
+marketplace-listing.json
+npm-debug.log
