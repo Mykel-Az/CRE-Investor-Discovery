@@ -31,6 +31,13 @@ function secsSince(ts: Date | string | null): number {
 /** 24 hours in seconds — stale threshold */
 const STALE_THRESHOLD = 86_400;
 
+// Contact enrichment fires external API calls (Proxycurl/Hunter). Doing this
+// at query time — even fire-and-forget — floods the event loop and DB pool
+// when a corridor returns 25 owners, so it is OFF by default. Contacts are
+// populated by the daily pre-warm cron instead. Set INLINE_CONTACT_ENRICHMENT
+// =true to re-enable on-demand enrichment.
+const INLINE_CONTACT_ENRICHMENT = process.env.INLINE_CONTACT_ENRICHMENT === 'true';
+
 function freshness(updatedAt: Date | string | null): 'fresh' | 'stale' {
   return secsSince(updatedAt) > STALE_THRESHOLD ? 'stale' : 'fresh';
 }
@@ -248,15 +255,11 @@ export async function resolveCorridorOwners(params: {
           source:     (dbContact.source as string) ?? 'unknown',
         };
         contactStatus = 'available';
+      } else if (INLINE_CONTACT_ENRICHMENT) {
+        enqueueContactEnrichment(entityId, (owner.canonical_name as string) ?? '');
+        contactStatus = 'pending';
       } else {
-        const cachedContact = await getCached<Record<string, unknown>>(`contact:${entityId}`);
-        if (cachedContact) {
-          contact = cachedContact as unknown as typeof contact;
-          contactStatus = 'available';
-        } else {
-          await enqueueContactEnrichment(entityId, (owner.canonical_name as string) ?? '');
-          contactStatus = 'pending';
-        }
+        contactStatus = 'pending';
       }
 
       const resolutionConfidence = (owner.resolution_confidence as number) ?? 0;
@@ -417,15 +420,11 @@ export async function resolveOwnerProfile(params: {
       source:     (c.source as string) ?? 'unknown',
     };
     contactStatus = 'available';
+  } else if (INLINE_CONTACT_ENRICHMENT) {
+    enqueueContactEnrichment(params.entity_id, (entity.canonical_name as string) ?? '');
+    contactStatus = 'pending';
   } else {
-    const cachedContact = await getCached<Record<string, unknown>>(`contact:${params.entity_id}`);
-    if (cachedContact) {
-      contact = cachedContact as unknown as typeof contact;
-      contactStatus = 'available';
-    } else {
-      await enqueueContactEnrichment(params.entity_id, (entity.canonical_name as string) ?? '');
-      contactStatus = 'pending';
-    }
+    contactStatus = 'pending';
   }
 
   // Log query

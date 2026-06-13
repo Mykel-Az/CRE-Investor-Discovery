@@ -3,12 +3,18 @@ import { createClient } from 'redis';
 
 export const redis = createClient({
   url: process.env.REDIS_URL ?? 'redis://localhost:6379',
+  // Fail fast when Redis is unreachable: commands reject immediately instead
+  // of queueing and waiting out the reconnect backoff. The cache is
+  // best-effort (helpers swallow errors and fall through to live data), so a
+  // down Redis must never add latency to a query. Previously each get/set
+  // could stall ~15-30s on the reconnect strategy, adding 35s+ per tool call.
+  disableOfflineQueue: true,
   socket: {
     reconnectStrategy: (retries: number) => {
-      if (retries > 10) return new Error('Redis reconnect limit reached');
-      return Math.min(retries * 500, 5000);
+      if (retries > 20) return new Error('Redis reconnect limit reached');
+      return Math.min(retries * 200, 3000);
     },
-    connectTimeout: 10000,
+    connectTimeout: 3000,
   }
 });
 
