@@ -58,7 +58,7 @@ export function registerParcelLookup(server: McpServer): void {
       }
 
       const normalised = parsed.address.toLowerCase().trim();
-      const cacheKey   = `parcel:${normalised.replace(/\s+/g, '_')}`;
+      const cacheKey   = `parcel:v2:${normalised.replace(/\s+/g, '_')}`;
 
       const cached = await getCached<Record<string, unknown>>(cacheKey);
       if (cached) {

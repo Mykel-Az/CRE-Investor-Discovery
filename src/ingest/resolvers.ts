@@ -136,10 +136,14 @@ export async function resolveCorridorOwners(params: {
 
   if (corridorRows.length === 0) {
     // Return closest road names so the agent knows what corridor names exist
+    // GROUP BY (not SELECT DISTINCT) so the similarity() sort key is allowed
+    // under Postgres 18, which rejects ORDER BY exprs absent from a DISTINCT list.
     const closestRoadsResult = await query(
-      `SELECT DISTINCT road_name FROM roads
+      `SELECT road_name, MAX(similarity(road_name, $2)) AS sim
+       FROM roads
        WHERE ($1 = '' OR UPPER(state) = $1)
-       ORDER BY similarity(road_name, $2) DESC
+       GROUP BY road_name
+       ORDER BY sim DESC
        LIMIT 5`,
       [roadState, roadName]
     ).catch(() => ({ rows: [] as Record<string, unknown>[] }));

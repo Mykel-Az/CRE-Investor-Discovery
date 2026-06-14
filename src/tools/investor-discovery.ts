@@ -69,7 +69,7 @@ export function registerInvestorDiscovery(server: McpServer): void {
       }
 
       const cacheKey = [
-        'discovery',
+        'discovery:v2',
         parsed.corridor.toLowerCase().replace(/\s+/g, '_'),
         parsed.property_type.toLowerCase(),
         parsed.lot_size_min_acres ?? 0,
