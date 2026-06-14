@@ -64,6 +64,7 @@ export async function resolveCorridorOwners(params: {
   lot_size_max_acres?: number;
   max_results: number;
 }): Promise<DiscoveryResult> {
+  const _t0 = Date.now();
   const corridorParts = params.corridor.split(',').map((s) => s.trim());
   const roadName  = corridorParts[0] ?? params.corridor;
   const rawState  = corridorParts[1]?.toUpperCase().trim() ?? '';
@@ -179,7 +180,12 @@ export async function resolveCorridorOwners(params: {
     confidenceByEntity.set(eid, Math.max(confidenceByEntity.get(eid) ?? 0, conf));
   }
 
-  const entityIds = entityOrder.slice(0, params.max_results);
+  // Hard-cap the number of owners returned. The Context librarian agent has to
+  // read and synthesize the entire tool result, so a 25+ owner payload (each
+  // with nested corridor properties) drives 150s+ of model time. 15 owners is
+  // ample for corridor discovery and keeps synthesis fast.
+  const OWNER_RESPONSE_CAP = 15;
+  const entityIds = entityOrder.slice(0, Math.min(params.max_results, OWNER_RESPONSE_CAP));
 
   // Entity metadata + full-portfolio summary + contacts — 3 batch queries
   const [entityMetaBatch, portfolioBatch, contactBatch] = await Promise.all([
@@ -278,7 +284,10 @@ export async function resolveCorridorOwners(params: {
         },
         contact,
         contact_status: contactStatus,
-        properties_in_corridor: props.map((p: Record<string, unknown>) => ({
+        // Cap the corridor-property list per owner: the full count is in
+        // portfolio_summary, and a long nested array per owner balloons the
+        // payload the librarian agent must synthesize.
+        properties_in_corridor: props.slice(0, 3).map((p: Record<string, unknown>) => ({
           address:         (p.address as string) ?? '',
           city:            (p.city as string) ?? '',
           state:           (p.state as string) ?? '',
@@ -305,6 +314,8 @@ export async function resolveCorridorOwners(params: {
       ['investor_discovery', o.entity_id, params.corridor]
     ).catch(() => {});
   }
+
+  console.log(`[investor_discovery] ${params.corridor} ${params.property_type} → ${owners.length} owners in ${Date.now() - _t0}ms`);
 
   return {
     status:        owners.length > 0 ? 'ok' : 'empty',
