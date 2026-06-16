@@ -47,7 +47,11 @@ export function registerInvestorDiscovery(server: McpServer): void {
       _meta: {
         surface:       'both',
         queryEligible: true,
-        latencyClass:  'slow',
+        // Handler responds in 1.8-3.8s in production after the edges-first
+        // query rewrite — 'slow' was set when the corridor query took 200s and
+        // is now inaccurate. The declared class likely drives the orchestrator's
+        // time budget / guardrail, so an honest 'fast' may cut the bounded-abort tail.
+        latencyClass:  'fast',
         pricing:       { executeUsd: '0.10' },
         rateLimit: {
           maxRequestsPerMinute: 60,
